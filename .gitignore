@@ -1,0 +1,13 @@
+# Ambiente virtuale e file generati da Python/Jupyter
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Dataset locali: non vanno pubblicati nel repository
+data/*.csv
+!data/.gitkeep
+
+# Report generati localmente (possono essere molto pesanti)
+reports/*.html
+!reports/.gitkeep

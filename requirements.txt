@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+ydata-profiling
+setuptools<81
+jupyter
+ipykernel
+jupytext
+black
