@@ -1,13 +1,14 @@
-# Analisi dei ricoveri per diabete
+# Diabetes Hospital Readmission — Data Science Project
 
-Struttura del progetto:
+Project structure:
 
-- `notebooks/`: notebook Jupyter con l'analisi.
-- `data/`: dataset locali, esclusi da Git.
-- `reports/`: report HTML generati localmente, esclusi da Git.
-- `requirements.txt`: dipendenze Python.
+- `notebooks/`: Jupyter notebooks with the analysis.
+- `data/`: local datasets, excluded from Git.
+- `docs/`: reference documents for the project (project brief, project plan).
+- `reports/`: generated HTML profiling reports, tracked in the repository.
+- `requirements.txt`: Python dependencies.
 
-Per preparare l'ambiente:
+To set up the environment:
 
 ```powershell
 python -m venv .venv
@@ -15,4 +16,4 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-I file `data/diabetic_data.csv` e `data/IDS_mapping.csv` devono restare disponibili solo in locale.
+The files `data/diabetic_data.csv` and `data/IDS_mapping.csv` must remain available locally only.
