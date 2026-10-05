@@ -6,6 +6,7 @@ __pycache__/
 
 # Local datasets: not meant to be published in the repository
 data/*.csv
+data/processed/
 !data/.gitkeep
 
 # Locally generated reports (can be very large)

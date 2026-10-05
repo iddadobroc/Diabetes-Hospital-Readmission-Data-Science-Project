@@ -4,6 +4,7 @@ Always load the raw data through these functions, never with a bare
 pd.read_csv(): the default NaN handling of pandas is wrong for this dataset.
 """
 
+import csv
 from pathlib import Path
 
 import pandas as pd
@@ -41,9 +42,12 @@ def load_mappings(path=None):
     path = Path(path) if path else DATA_DIR / "IDS_mapping.csv"
     mappings = {}
     current = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        key, _, description = line.partition(",")
-        key, description = key.strip(), description.strip()
+    # csv.reader handles the quoted descriptions that contain a comma
+    with path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.reader(f))
+    for row in rows:
+        key = row[0].strip() if row else ""
+        description = ",".join(row[1:]).strip()
         if not key:
             # Empty separator line between two tables
             current = None
