@@ -3,6 +3,8 @@ numpy
 scikit-learn
 matplotlib
 ydata-profiling
+pyarrow
+polars
 setuptools<81
 jupyter
 ipykernel
