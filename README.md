@@ -2,31 +2,24 @@
 
 ## Project structure
 
-- `notebooks/`: Jupyter notebooks with the analysis.
-- `src/`: shared Python code (e.g. `data_prep.py` for loading the data correctly).
+- `notebooks/`: Jupyter notebooks with the shared analysis (EDA).
+- `LA_Models/`, `DC_Models/`: modelling notebooks of two independent work streams, compared at the end. In `DC_Models/`, each `.ipynb` has a `.py` copy in Jupytext "percent" format (code and text only, no outputs).
+- `src/`: shared Python code, imported by the notebooks:
+  - `data_prep.py`: loading the raw data correctly;
+  - `features.py`: the deterministic cleaning (`clean`, with the decision-log proposals as defaults and the alternatives as options), the feature lists and the patient-grouped split;
+  - `preprocessing.py`: the preprocessing of each model family, as scikit-learn transformers fitted inside the model pipeline;
+  - `models.py`: scikit-learn wrappers for XGBoost AFT, CatBoost and Keras;
+  - `evaluation.py`: the metrics and the readable result tables.
 - `data/`: local datasets, excluded from Git.
 - `docs/`: reference documents for the project (project brief, project plan) and `decision_log.md`, the record of every methodological decision.
-- `reports/`: generated HTML profiling reports, excluded from Git (regenerate them locally from the notebook).
-- `requirements.txt`: Python dependencies.
+- `reports/`: experiment logs (`experiments-readmission*.csv`, one row per model and dataset, committed) and `df_diabetes_report.html`, the clean profiling report of the raw data (committed; other HTML reports stay local).
+- `requirements.txt`: Python dependencies; `SETUP.md`: how to install them on Windows and macOS.
+- `tests/`: unit tests of the code in `src/` (`python -m unittest`, from the project folder).
 - `CLAUDE.md`: project rules and verified data facts, read automatically by Claude Code.
 
 ## Setup
 
-1. Create the virtual environment with **Python 3.13** (required by the course; `ydata-profiling` does not support Python 3.14) and install the dependencies:
-
-   ```powershell
-   py -3.13 -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   ```
-
-   If PowerShell refuses to run `Activate.ps1` ("running scripts is disabled on this system"), run this once and try again:
-
-   ```powershell
-   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-   ```
-
-2. Copy `diabetic_data.csv` and `IDS_mapping.csv` into the `data/` folder. These files must remain available locally only (they are gitignored).
+Python 3.13, a virtual environment in `.venv/` and `pip install -r requirements.txt`, then the two data files in `data/`. The commands differ between Windows and macOS (macOS also needs `brew install libomp`, and TensorFlow has no wheel for Intel Macs): see **[SETUP.md](SETUP.md)** for the step-by-step guide of each system.
 
 ## Running the EDA notebook
 
@@ -36,6 +29,23 @@
 4. To regenerate the profiling report, uncomment the `ProfileReport` cell and run it (it takes a few minutes). The report is saved to `reports/df_diabetes_report.html` and can be opened in a browser.
 
 The notebook imports the loading functions from `src/data_prep.py`, so it must be run from the project (it finds the project root automatically).
+
+## Running the modelling notebooks (`DC_Models/`)
+
+Run them in this order, with the `.venv` kernel (**Restart Kernel → Run All**):
+
+| Notebook | What it does | Time |
+|---|---|---|
+| `01_cleaning_variants.ipynb` | Tests the cleaning proposals of the decision log against their alternatives, with patient-grouped folds | ~3 min |
+| `02_model_exploration.ipynb` | Compares the model families (linear, EBM, bagging, boosting, XGBoost AFT, Keras, ensemble) and writes `reports/experiments-readmission-dc.csv` | ~45 min |
+
+The test set is never opened during model selection: it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
+
+After changing a notebook, regenerate its `.py` copy before committing:
+
+```powershell
+jupytext --to py:percent --opt notebook_metadata_filter=-all --opt cell_metadata_filter=-all DC_Models/02_model_exploration.ipynb
+```
 
 ## How we obtain a clean profiling report
 
@@ -86,27 +96,32 @@ These decisions change the number of rows, so they must be agreed before writing
 | Train/test split | All encounters + grouped split on `patient_nbr` | First encounter per patient only (Strack et al.) | D-010 |
 | `medical_specialty` | Top-N levels (~10) + "Other", fitted inside the model pipeline | Manual grouping by clinical area | D-009 |
 
-**Output:** decision log entries updated from *Proposed* / *Open* to *Accepted*.
+**Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb` tests every alternative against the proposals with the same patient-grouped folds and two models. Every proposal holds; only D-010 makes a real difference (training on the first encounter only costs 0.011 PR-AUC). The numbers are in each decision log entry.
+
+**Output:** decision log entries updated from *Proposed* / *Open* to *Accepted* (pending team agreement).
 
 ### Step 2 — Deterministic cleaning in `src/`
 
 A `clean()` function applies only row-wise, rule-based transformations that do not learn anything from the data, so it can safely run before the split. Anything that is fitted on the data (top-N categories, encoding, scaling, imputation) belongs to the model pipeline and is fitted on the training set only.
 
-- [ ] Filter rows according to the decisions in Step 1.
-- [ ] Create the target `readmitted_30 = (readmitted == "<30")`; keep the raw `readmitted` column out of the features.
-- [ ] Drop `examide`, `citoglipton`, `weight` and the rare medications.
-- [ ] Make missing values explicit: `race`, `payer_code`, `medical_specialty` -> `"Unknown"`; `diag_1/2/3` -> `"Missing"`.
-- [ ] Group the diagnoses into the Strack et al. ICD-9 categories (`diag_1/2/3_group`), handling `250.xx` and V/E codes before any numeric conversion, and keep the raw strings.
-- [ ] Add medication summary features: `n_meds_active` (drugs not "No") and `n_meds_changed` (drugs "Up" or "Down"); keep `insulin` as its own feature.
-- [ ] Cast `age` to an ordered category.
-- [ ] End with sanity checks (`assert`): expected number of rows, no missing target, expected columns.
+Implemented in `clean()` (`src/features.py`), with the proposals as defaults and the Step 1 alternatives as options.
 
-**Output:** a tested `clean()` function and a `02_data_cleaning.ipynb` notebook showing, for each step, rows, columns and `<30` rate before and after.
+- [x] Filter rows according to the decisions in Step 1.
+- [x] Create the target `readmitted_30 = (readmitted == "<30")`; keep the raw `readmitted` column out of the features.
+- [x] Drop `examide`, `citoglipton`, `weight` and the rare medications.
+- [x] Make missing values explicit: `race`, `payer_code`, `medical_specialty` -> `"Unknown"`; `diag_1/2/3` -> `"Missing"` (in the `diag_*_group` columns; the raw codes are reference columns, never features).
+- [x] Group the diagnoses into the Strack et al. ICD-9 categories (`diag_1/2/3_group`), handling `250.xx` and V/E codes before any numeric conversion, and keep the raw strings.
+- [x] Add medication summary features: `n_meds_active` (drugs not "No") and `n_meds_changed` (drugs "Up" or "Down"); keep `insulin` as its own feature.
+- [x] Encode `age` by its order: `age_band_order` (0 for `[0-10)` to 9 for `[90-100)`), an integer that keeps the order of the bands without turning them into ages.
+- [x] End with sanity checks (`assert`): expected number of rows, no missing target, expected columns (in the notebooks), plus unit tests in `tests/test_src.py` (`python -m unittest`).
+- [ ] A `02_data_cleaning.ipynb` notebook showing, for each step, rows, columns and `<30` rate before and after.
+
+**Output:** a tested `clean()` function (done) and the step-by-step cleaning notebook (to do).
 
 ### Step 3 — Split and freeze the dataset
 
-- [ ] Create the test holdout with the strategy chosen in D-010 (e.g. `GroupShuffleSplit`, 80/20 on `patient_nbr`, fixed `random_state`).
-- [ ] Check that no `patient_nbr` appears in both sets and that the `<30` rate is similar in both.
+- [x] Create the test holdout with the strategy chosen in D-010: `split_by_patient()` (`src/features.py`), two `GroupShuffleSplit` cuts on `patient_nbr`, 60/20/20 train/validation/test, `random_state=42`.
+- [x] Check that no `patient_nbr` appears in two sets (`assert` in the function and a unit test) and that the `<30` rate is similar in all three (0.114 / 0.114 / 0.112).
 - [ ] Save `data/processed/train.parquet` and `data/processed/test.parquet` (local only).
 - [ ] Regenerate the profiling report on the clean dataset.
 
@@ -122,6 +137,15 @@ A `clean()` function applies only row-wise, rule-based transformations that do n
 
 ### Step 5 — Prepare Phase 2 (model)
 
-- [ ] `ColumnTransformer` + `Pipeline` with encoding, top-N categories and scaling (`log1p` on count variables for the logistic regression).
-- [ ] Baseline logistic regression with `class_weight="balanced"`, evaluated with grouped cross-validation on `patient_nbr`.
-- [ ] Fix the evaluation metrics: PR-AUC, ROC-AUC, recall and precision at top-K.
+- [x] `ColumnTransformer` + `Pipeline` with encoding, top-N categories and scaling (`src/preprocessing.py`). `log1p` on the count variables is not applied yet: to be tested on validation.
+- [x] Baseline logistic regression with `class_weight="balanced"`, evaluated with grouped cross-validation on `patient_nbr` (`DC_Models/02_model_exploration.ipynb`).
+- [x] Fix the evaluation metrics: PR-AUC, ROC-AUC, recall and precision at top-K (`src/evaluation.py`).
+
+### Step 6 — Phase 2 (model), in progress
+
+- [x] Compare the model families with patient-grouped tuning and a fold-by-fold check (`DC_Models/02_model_exploration.ipynb`, Stage 5): tuned XGBoost is the best single model (cross-validated PR-AUC 0.228), a soft-voting ensemble the best overall (0.230). See D-019 in the decision log.
+- [ ] Calibrate the chosen model on validation, build the capacity-based risk tiers and the decision curve (Stage 6).
+- [ ] SHAP explanations and the fairness baseline by `race`, `age` and `gender` (Stage 6).
+- [ ] Open the test set once (Stage 7).
+
+The research directions beyond the project plan (statistical comparison of models, ranking objectives, comorbidity indices, conformal prediction…) are listed in the decision log, D-020 to D-029.

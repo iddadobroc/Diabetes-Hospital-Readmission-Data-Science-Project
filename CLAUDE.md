@@ -13,7 +13,9 @@ Reference documents are in `docs/` (course brief and project plan): follow them 
 
 - Code, comments, markdown cells and file names are in English.
 - Shared code lives in `src/`; notebooks import it instead of duplicating logic.
-- `data/*.csv` and `reports/*.html` are local only (gitignored): never commit them.
+- `data/*.csv` are local only (gitignored): never commit them.
+- `reports/df_diabetes_report.html` is the only committed HTML report: the clean profile, generated from `add_mapping_descriptions(load_raw(), load_mappings())`. Never overwrite it with a report built from a bare `pd.read_csv()` / `pl.read_csv()`. Other HTML reports stay local (gitignored).
+- Modelling notebooks in `DC_Models/` are committed in both formats: the executed `.ipynb` and its Jupytext `.py:percent` copy (see README).
 
 ## Loading the data
 
@@ -34,3 +36,7 @@ Always use `src/data_prep.py`, never a bare `pd.read_csv()`:
 ## Methodological rules
 
 - Patient-level leakage: train/test splits must never put encounters of the same patient on both sides (GroupKFold on `patient_nbr`, or keep only the first encounter per patient). The final choice must be recorded in the decision log.
+- Everything that learns from the data (rare-level grouping, encoding, scaling, imputation, feature selection) lives inside a scikit-learn `Pipeline` (`src/preprocessing.py`), fitted on the fitting rows of each split or fold only (D-014).
+- Every cross-validation and hyperparameter search is grouped on `patient_nbr` (`StratifiedGroupKFold`, `groups=` in `fit`). No random internal splits: early stopping off, Keras without `validation_split`, no `StackingClassifier` (D-017).
+- Tune on the grouped CV of the training rows, compare on validation, open the test set once (D-015). Target rates and any other look at the outcome happen on training rows only.
+- Run `python -m unittest` after changing `src/`.
