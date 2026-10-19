@@ -9,7 +9,9 @@ data/*.csv
 data/processed/
 !data/.gitkeep
 initprojectdescription.pdf
-# Locally generated reports (can be very large)
+# Locally generated reports (can be very large); only the clean profile is committed
+reports/*.html
+!reports/df_diabetes_report.html
 
 !reports/.gitkeep
 .DS_Store
