@@ -10,3 +10,10 @@ jupyter
 ipykernel
 jupytext
 black
+# Model families (DC_Models/02_model_exploration.ipynb)
+xgboost
+lightgbm
+catboost
+interpret-core
+tensorflow
+shap
