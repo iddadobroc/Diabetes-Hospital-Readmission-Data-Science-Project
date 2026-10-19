@@ -1,0 +1,27 @@
+date,model,family,dataset,pr_auc,roc_auc,precision_top10,recall_top10,accuracy,balanced_accuracy,precision,recall,f1,log_loss,brier,note
+2026-10-19,Logistic regression (baseline),linear,train,0.218,0.672,0.263,0.23,0.67,0.623,0.187,0.561,0.28,0.647,0.225,baseline
+2026-10-19,Logistic regression (baseline),linear,validation,0.21,0.658,0.247,0.216,0.669,0.61,0.18,0.532,0.269,0.645,0.225,baseline
+2026-10-19,Gradient boosting (baseline),boosting,train,0.268,0.723,0.311,0.272,0.672,0.659,0.204,0.641,0.309,0.618,0.214,baseline
+2026-10-19,Gradient boosting (baseline),boosting,validation,0.224,0.674,0.264,0.231,0.66,0.621,0.183,0.57,0.277,0.625,0.217,baseline
+2026-10-19,Gradient boosting sklearn (tuned),boosting,train,0.276,0.736,0.318,0.278,0.679,0.67,0.211,0.658,0.319,0.61,0.211,random search 10
+2026-10-19,Gradient boosting sklearn (tuned),boosting,validation,0.224,0.676,0.266,0.233,0.666,0.626,0.187,0.574,0.282,0.62,0.215,random search 10
+2026-10-19,Logistic regression (elastic net),linear,train,0.218,0.672,0.262,0.229,0.671,0.621,0.186,0.557,0.279,0.647,0.225,
+2026-10-19,Logistic regression (elastic net),linear,validation,0.21,0.659,0.249,0.218,0.672,0.612,0.182,0.534,0.271,0.645,0.225,
+2026-10-19,EBM,additive,train,0.262,0.703,0.301,0.263,0.887,0.508,0.709,0.018,0.035,0.327,0.095,
+2026-10-19,EBM,additive,validation,0.221,0.667,0.258,0.226,0.886,0.506,0.476,0.013,0.026,0.336,0.097,
+2026-10-19,Random forest,bagging,train,0.413,0.828,0.429,0.375,0.736,0.744,0.268,0.754,0.396,0.579,0.195,
+2026-10-19,Random forest,bagging,validation,0.208,0.674,0.253,0.222,0.696,0.625,0.195,0.533,0.286,0.604,0.208,
+2026-10-19,Extra trees,bagging,train,0.526,0.893,0.529,0.462,0.793,0.812,0.337,0.837,0.48,0.559,0.185,
+2026-10-19,Extra trees,bagging,validation,0.202,0.66,0.233,0.204,0.722,0.608,0.196,0.461,0.275,0.595,0.203,
+2026-10-19,XGBoost (tuned),boosting,train,0.393,0.796,0.42,0.367,0.859,0.663,0.391,0.409,0.4,0.434,0.132,random search 15
+2026-10-19,XGBoost (tuned),boosting,validation,0.226,0.669,0.267,0.234,0.833,0.582,0.264,0.256,0.26,0.465,0.146,random search 15
+2026-10-19,LightGBM (tuned),boosting,train,0.29,0.753,0.336,0.293,0.69,0.685,0.221,0.678,0.334,0.601,0.206,random search 15
+2026-10-19,LightGBM (tuned),boosting,validation,0.222,0.675,0.267,0.234,0.671,0.626,0.188,0.567,0.282,0.614,0.213,random search 15
+2026-10-19,CatBoost (tuned),boosting,train,0.313,0.755,0.352,0.307,0.708,0.681,0.227,0.646,0.336,0.585,0.199,random search 4
+2026-10-19,CatBoost (tuned),boosting,validation,0.222,0.668,0.262,0.229,0.69,0.622,0.192,0.534,0.282,0.602,0.207,random search 4
+2026-10-19,XGBoost AFT (tuned),survival,train,0.312,0.737,0.351,0.307,0.677,0.668,0.209,0.656,0.317,0.614,0.212,random search 10
+2026-10-19,XGBoost AFT (tuned),survival,validation,0.223,0.671,0.273,0.239,0.665,0.622,0.184,0.566,0.278,0.628,0.218,random search 10
+2026-10-19,Keras MLP (tuned),neural,train,0.25,0.709,0.293,0.256,0.65,0.649,0.193,0.648,0.298,0.62,0.215,random search 6
+2026-10-19,Keras MLP (tuned),neural,validation,0.222,0.673,0.258,0.226,0.649,0.626,0.183,0.597,0.28,0.626,0.218,random search 6
+2026-10-19,Soft-voting ensemble,ensemble,train,0.33,0.754,0.367,0.321,0.762,0.678,0.257,0.569,0.354,0.547,0.182,XGBoost (tuned) + XGBoost AFT (tuned) + Keras MLP (tuned)
+2026-10-19,Soft-voting ensemble,ensemble,validation,0.229,0.676,0.269,0.236,0.743,0.619,0.211,0.457,0.289,0.564,0.189,XGBoost (tuned) + XGBoost AFT (tuned) + Keras MLP (tuned)
