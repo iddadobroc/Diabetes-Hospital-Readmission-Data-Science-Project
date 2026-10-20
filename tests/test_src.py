@@ -18,7 +18,13 @@ from sklearn.base import clone
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from evaluation import cv_summary, leaderboard, scores  # noqa: E402
+from calibration import (  # noqa: E402
+    capacity_cutoffs,
+    holdout_calibration,
+    out_of_fold_calibration,
+    tier_report,
+)
+from evaluation import cv_summary, leaderboard, rate_by, scores  # noqa: E402
 from features import (  # noqa: E402
     FEATURES,
     GROUP,
@@ -34,6 +40,7 @@ from models import (  # noqa: E402
     CatBoostNativeClassifier,
     KerasMLPClassifier,
     XGBAFTClassifier,
+    with_seed,
 )
 from preprocessing import make_preprocessor  # noqa: E402
 
@@ -128,6 +135,19 @@ class TestClean(unittest.TestCase):
         out = clean(self.raw, hospice="flag")
         self.assertEqual(list(out["encounter_id"]), [1, 3, 5, 6])
         self.assertEqual(list(out["hospice"]), [0, 1, 0, 0])
+
+    def test_step_log(self):
+        """The log follows rows and <30 rate step by step, and changes nothing."""
+        log = []
+        out = clean(self.raw, log=log)
+        pd.testing.assert_frame_equal(out, clean(self.raw))
+        steps = {entry["step"][:2]: entry for entry in log}
+        self.assertEqual(steps["0."]["rows"], 6)
+        self.assertAlmostEqual(steps["0."]["readmitted_30_rate"], 2 / 6)
+        self.assertEqual(steps["1a"]["rows"], 4)
+        self.assertEqual(steps["1b"]["rows"], 3)
+        self.assertAlmostEqual(steps["1b"]["readmitted_30_rate"], 1 / 3)
+        self.assertEqual(log[-1]["columns"], out.shape[1])
 
     def test_target_and_no_answer_left(self):
         """D-011: only "<30" is positive, and the raw outcome is dropped."""
@@ -260,6 +280,24 @@ class TestEvaluation(unittest.TestCase):
         cv = log.assign(fold=1)
         self.assertIn("±", cv_summary(cv).iloc[0, 0])
 
+    def test_rate_interval_accounts_for_patients(self):
+        """Duplicating every patient's encounter keeps the rate, not the evidence."""
+        rng = np.random.default_rng(0)
+        one = pd.DataFrame(
+            {"level": "a", "y": rng.integers(0, 2, 400), "patient": np.arange(400)}
+        )
+        twice = pd.concat([one, one])
+        single = rate_by(one, "level", "y", "patient").loc["a"]
+        double = rate_by(twice, "level", "y", "patient").loc["a"]
+        p = one["y"].mean()
+        binomial = np.sqrt(p * (1 - p) / 400 * 400 / 399)
+        self.assertAlmostEqual((single["high"] - single["low"]) / 2, 1.96 * binomial)
+        self.assertEqual(double["encounters"], 800)
+        self.assertEqual(double["patients"], 400)
+        self.assertAlmostEqual(
+            double["high"] - double["low"], single["high"] - single["low"]
+        )
+
 
 class TestModelWrappers(unittest.TestCase):
     """The wrappers of src/models.py behave like scikit-learn classifiers."""
@@ -289,6 +327,94 @@ class TestModelWrappers(unittest.TestCase):
         model = CatBoostNativeClassifier(iterations=10).fit(X, y)
         self.assertEqual(model.cat_features_, ["colour"])
         self.assertEqual(model.predict_proba(X).shape, (40, 2))
+
+    def test_with_seed_reaches_nested_models(self):
+        """with_seed sets the seed of every model inside an ensemble of pipelines."""
+        from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+        from sklearn.pipeline import Pipeline
+
+        ensemble = VotingClassifier(
+            [
+                ("a", Pipeline([("model", RandomForestClassifier(random_state=0))])),
+                ("b", XGBAFTClassifier(random_state=0)),
+            ]
+        )
+        reseeded = with_seed(ensemble, 7).get_params()
+        self.assertEqual(reseeded["a__model__random_state"], 7)
+        self.assertEqual(reseeded["b__random_state"], 7)
+        self.assertEqual(ensemble.get_params()["b__random_state"], 0)
+
+
+class TestCalibration(unittest.TestCase):
+    """Calibration and cut-offs learn from patients the model was not fitted on."""
+
+    def setUp(self):
+        """3,000 encounters of 750 patients, about 15% positive."""
+        rng = np.random.default_rng(0)
+        self.X = pd.DataFrame(rng.normal(size=(3000, 3)), columns=["a", "b", "c"])
+        logit = self.X["a"] + 0.5 * self.X["b"] - 2.2
+        self.y = (rng.random(3000) < 1 / (1 + np.exp(-logit))).astype(int)
+        self.groups = np.repeat(np.arange(750), 4)
+
+    def pipelines(self):
+        """One model with decision_function, one with predict_proba only."""
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        return [
+            make_pipeline(
+                StandardScaler(), LogisticRegression(class_weight="balanced")
+            ),
+            make_pipeline(
+                RandomForestClassifier(
+                    n_estimators=30, min_samples_leaf=20, random_state=0
+                )
+            ),
+        ]
+
+    def test_out_of_fold_reference(self):
+        """The reference is the calibrator applied to the scores it was fitted on.
+
+        Isotonic regression keeps the mean of what it is fitted on, so the mean of the
+        reference must equal the observed rate. Taking the wrong out-of-fold scores
+        (predict_proba instead of decision_function) would break this.
+        """
+        from sklearn.model_selection import StratifiedGroupKFold
+
+        cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=0)
+        for pipe in self.pipelines():
+            model, reference = out_of_fold_calibration(
+                pipe, self.X, self.y, self.groups, cv
+            )
+            self.assertEqual(len(reference), len(self.y))
+            self.assertAlmostEqual(reference.mean(), self.y.mean(), places=6)
+            self.assertEqual(model.predict_proba(self.X).shape, (3000, 2))
+
+    def test_holdout_calibration_fixes_inflated_risks(self):
+        """Balanced weights inflate the risks; calibrated, they match the rate."""
+        pipe = self.pipelines()[0]
+        fit, cal, new = slice(0, 1500), slice(1500, 2250), slice(2250, 3000)
+        raw = clone(pipe).fit(self.X[fit], self.y[fit])
+        self.assertGreater(raw.predict_proba(self.X[new])[:, 1].mean(), 0.3)
+        model, reference = holdout_calibration(
+            pipe, self.X[fit], self.y[fit], self.X[cal], self.y[cal]
+        )
+        self.assertAlmostEqual(reference.mean(), self.y[cal].mean(), places=6)
+        p = model.predict_proba(self.X[new])[:, 1]
+        self.assertAlmostEqual(p.mean(), self.y[new].mean(), delta=0.03)
+
+    def test_cutoffs_and_tiers(self):
+        """A 10% capacity flags the top 10% of the reference encounters."""
+        p = np.linspace(0, 1, 1000, endpoint=False)
+        y = (p >= 0.9).astype(int)
+        cutoffs = capacity_cutoffs(p, {"High": 0.10})
+        report = tier_report(y, p, cutoffs)
+        self.assertAlmostEqual(report.loc["High", "share_flagged"], 0.10)
+        self.assertEqual(report.loc["High", "observed_rate"], 1.0)
+        self.assertEqual(report.loc["High", "recall"], 1.0)
+        self.assertEqual(report.loc["All encounters", "share_flagged"], 1.0)
 
 
 if __name__ == "__main__":

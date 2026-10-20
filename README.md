@@ -2,17 +2,19 @@
 try to contribute
 ## Project structure
 
-- `notebooks/`: Jupyter notebooks with the shared analysis (EDA).
-- `LA_Models/`, `DC_Models/`: modelling notebooks of two independent work streams, compared at the end. In `DC_Models/`, each `.ipynb` has a `.py` copy in Jupytext "percent" format (code and text only, no outputs).
+- `notebooks/`: the shared analysis: `EDA Diabetes Project.ipynb` (first look at the raw data), `02_data_cleaning.ipynb` (the cleaning step by step and the frozen split), `03_eda_target.ipynb` (the `<30` rate on the training rows).
+- `LA_Models/`, `DC_Models/`: modelling notebooks of two independent work streams, compared at the end.
+- In `DC_Models/` and for `notebooks/02_*` and `03_*`, each `.ipynb` has a `.py` copy in Jupytext "percent" format (code and text only, no outputs).
 - `src/`: shared Python code, imported by the notebooks:
   - `data_prep.py`: loading the raw data correctly;
   - `features.py`: the deterministic cleaning (`clean`, with the decision-log proposals as defaults and the alternatives as options), the feature lists and the patient-grouped split;
   - `preprocessing.py`: the preprocessing of each model family, as scikit-learn transformers fitted inside the model pipeline;
-  - `models.py`: scikit-learn wrappers for XGBoost AFT, CatBoost and Keras;
-  - `evaluation.py`: the metrics and the readable result tables.
+  - `models.py`: scikit-learn wrappers for XGBoost AFT, CatBoost and Keras, and `with_seed` to refit any model with another seed;
+  - `evaluation.py`: the metrics, the readable result tables and `rate_by` (a rate by level, with an interval by patient);
+  - `calibration.py`: the two leakage-safe ways to calibrate the chosen model (holdout, grouped out of fold) and the capacity tiers.
 - `data/`: local datasets, excluded from Git.
 - `docs/`: reference documents for the project (project brief, project plan) and `decision_log.md`, the record of every methodological decision.
-- `reports/`: experiment logs (`experiments-readmission*.csv`, one row per model and dataset, committed) and `df_diabetes_report.html`, the clean profiling report of the raw data (committed; other HTML reports stay local).
+- `reports/`: experiment logs (`experiments-readmission*.csv`, one row per model and dataset, committed) and `df_diabetes_report.html`, the clean profiling report of the raw data (committed; other HTML reports, such as `df_train_clean_report.html` built by `02_data_cleaning.ipynb`, stay local).
 - `requirements.txt`: Python dependencies; `SETUP.md`: how to install them on Windows and macOS.
 - `tests/`: unit tests of the code in `src/` (`python -m unittest`, from the project folder).
 - `CLAUDE.md`: project rules and verified data facts, read automatically by Claude Code.
@@ -30,6 +32,8 @@ Python 3.13, a virtual environment in `.venv/` and `pip install -r requirements.
 
 The notebook imports the loading functions from `src/data_prep.py`, so it must be run from the project (it finds the project root automatically).
 
+The same way, then run `02_data_cleaning.ipynb` (about a minute; the first run also builds `reports/df_train_clean_report.html`, a few more minutes) and `03_eda_target.ipynb` (seconds).
+
 ## Running the modelling notebooks (`DC_Models/`)
 
 Run them in this order, with the `.venv` kernel (**Restart Kernel → Run All**):
@@ -39,7 +43,7 @@ Run them in this order, with the `.venv` kernel (**Restart Kernel → Run All**)
 | `01_cleaning_variants.ipynb` | Tests the cleaning proposals of the decision log against their alternatives, with patient-grouped folds | ~3 min |
 | `02_model_exploration.ipynb` | Compares the model families (linear, EBM, bagging, boosting, XGBoost AFT, Keras, ensemble) and writes `reports/experiments-readmission-dc.csv` | ~45 min |
 
-The test set is never opened during model selection: it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
+The test set is never opened during model selection: it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`, and it cannot be opened before `PRIMARY` declares which calibration option (rehearsed on validation in Stage 6) is the main result. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
 
 After changing a notebook, regenerate its `.py` copy before committing:
 
@@ -114,26 +118,26 @@ Implemented in `clean()` (`src/features.py`), with the proposals as defaults and
 - [x] Add medication summary features: `n_meds_active` (drugs not "No") and `n_meds_changed` (drugs "Up" or "Down"); keep `insulin` as its own feature.
 - [x] Encode `age` by its order: `age_band_order` (0 for `[0-10)` to 9 for `[90-100)`), an integer that keeps the order of the bands without turning them into ages.
 - [x] End with sanity checks (`assert`): expected number of rows, no missing target, expected columns (in the notebooks), plus unit tests in `tests/test_src.py` (`python -m unittest`).
-- [ ] A `02_data_cleaning.ipynb` notebook showing, for each step, rows, columns and `<30` rate before and after.
+- [x] A `02_data_cleaning.ipynb` notebook showing, for each step, rows, columns and `<30` rate before and after (`clean(..., log=[])` records them).
 
-**Output:** a tested `clean()` function (done) and the step-by-step cleaning notebook (to do).
+**Output:** a tested `clean()` function and the step-by-step cleaning notebook (`notebooks/02_data_cleaning.ipynb`).
 
 ### Step 3 — Split and freeze the dataset
 
 - [x] Create the test holdout with the strategy chosen in D-010: `split_by_patient()` (`src/features.py`), two `GroupShuffleSplit` cuts on `patient_nbr`, 60/20/20 train/validation/test, `random_state=42`.
 - [x] Check that no `patient_nbr` appears in two sets (`assert` in the function and a unit test) and that the `<30` rate is similar in all three (0.114 / 0.114 / 0.112).
-- [ ] Save `data/processed/train.parquet` and `data/processed/test.parquet` (local only).
-- [ ] Regenerate the profiling report on the clean dataset.
+- [x] ~~Save `data/processed/train.parquet` and `data/processed/test.parquet` (local only).~~ Replaced by fingerprints: `data/` is not in Git, so each member would rebuild the files anyway, while `clean()` + `split_by_patient()` rebuild the same three sets in seconds. `02_data_cleaning.ipynb` prints a hash of each set's `encounter_id` to check that two computers have the same data (train `1e2fece0c48e`, validation `920e3a74bf6e`, test `fe3f135ba61d`).
+- [x] Regenerate the profiling report on the clean dataset: on the **training rows** only (`reports/df_train_clean_report.html`, local), because the report shows the correlations of the target.
 
 **Output:** the frozen modelling dataset. This closes Phase 1; from here the other work streams can start in parallel.
 
 ### Step 4 — Target-oriented EDA (training set only)
 
-- [ ] `<30` rate by `number_inpatient`, `discharge_disposition_desc`, `admission_source_desc`, `age`, `A1Cresult`, `diag_1_group`, `medical_specialty`, `n_meds_changed`, `insulin`.
-- [ ] Distributions by `race`, `gender` and `age`, as a baseline for the fairness audit (Phase 5).
-- [ ] A short list of insights for the report and for feature selection.
+- [x] `<30` rate by `number_inpatient`, `discharge_disposition_desc`, `admission_source_desc`, `age`, `A1Cresult`, `diag_1_group`, `medical_specialty`, `n_meds_changed`, `insulin`, with 95% intervals by patient.
+- [x] Distributions by `race`, `gender` and `age`, as a baseline for the fairness audit (Phase 5).
+- [x] A short list of insights for the report and for feature selection.
 
-**Output:** a `03_eda_target.ipynb` notebook.
+**Output:** `notebooks/03_eda_target.ipynb`.
 
 ### Step 5 — Prepare Phase 2 (model)
 

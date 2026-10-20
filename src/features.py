@@ -250,7 +250,9 @@ def icd9_group(code):
     return "Other"
 
 
-def clean(df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=False):
+def clean(
+    df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=False, log=None
+):
     """Apply the fixed, row-by-row cleaning rules. Learns nothing from the data.
 
     The default options are the proposals of the decision log; the other values are
@@ -268,6 +270,9 @@ def clean(df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=Fal
             of `SPECIALTY_GROUPS` (alternative).
         weight_flag (bool): True adds a 0/1 `weight_recorded` column before `weight`
             is dropped (alternative mentioned in D-006).
+        log (list, optional): If given, one dict per step is appended to it: the
+            rows, the columns and the `<30` rate after that step (for the cleaning
+            notebook). The overall rate only: no breakdown by feature.
 
     Returns:
         pandas.DataFrame: One row per kept encounter, with the target `readmitted_30`,
@@ -276,19 +281,43 @@ def clean(df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=Fal
     """
     df = df.copy()
 
+    def record(step):
+        """Append the shape and the `<30` rate of `df` after `step` to `log`."""
+        if log is None:
+            return
+        if "readmitted" in df.columns:
+            rate = (df["readmitted"] == "<30").mean()
+        else:
+            rate = df[TARGET].mean()
+        log.append(
+            {
+                "step": step,
+                "rows": len(df),
+                "columns": df.shape[1],
+                "readmitted_30_rate": rate,
+            }
+        )
+
+    record("0. Raw data, IDs decoded")
+
     # 1. Outcome not observable: death (D-004) and, unless flagged, hospice (D-005)
+    df = df[~df["discharge_disposition_id"].astype(int).isin(EXPIRED)]
+    record("1a. Remove expired encounters (D-004)")
     codes = df["discharge_disposition_id"].astype(int)
     if hospice == "flag":
         df["hospice"] = codes.isin(HOSPICE).astype(int)
-        df = df[~codes.isin(EXPIRED)]
+        record("1b. Flag hospice encounters (D-005, alternative)")
     else:
-        df = df[~codes.isin(DEATH_OR_HOSPICE)]
+        df = df[~codes.isin(HOSPICE)]
+        record("1b. Remove hospice encounters (D-005)")
 
     # 2. Binary target; the raw column is the answer, so it goes (D-011)
     df[TARGET] = (df["readmitted"] == "<30").astype(int)
+    record("2. Binary target readmitted_30 (D-011)")
 
     # 3. Age band -> its position, 0 to 9: "[70-80)" -> 7 (an order, not an age)
     df["age_band_order"] = df["age"].str[1:].str.split("-").str[0].astype(int) // 10
+    record("3. age_band_order")
 
     # 4. Missing values as an explicit level (D-008)
     for col in ["race", "payer_code", "medical_specialty"]:
@@ -302,23 +331,30 @@ def clean(df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=Fal
     if rare_meds == "group":
         any_rare = (df[RARE_MEDICATIONS] != "No").any(axis=1)
         df["other_meds"] = any_rare.map({True: "Yes", False: "No"})
+    record("4. Explicit Unknown levels (D-008)")
 
     # 5. Diagnoses -> clinical groups (map on the unique codes, much faster)
     for col in ["diag_1", "diag_2", "diag_3"]:
         groups = {code: icd9_group(code) for code in df[col].unique()}
         df[f"{col}_group"] = df[col].map(groups)
+    record("5. Diagnosis groups diag_1/2/3_group")
 
     # 6. Medication summaries, computed on ALL drugs before dropping the rare ones
     df["n_meds_active"] = (df[MEDICATIONS] != "No").sum(axis=1)
     df["n_meds_changed"] = df[MEDICATIONS].isin(["Up", "Down"]).sum(axis=1)
+    record("6. Medication counts n_meds_active, n_meds_changed")
 
     # 7. Total use of the hospital in the previous year
     df["n_visits_last_year"] = df[
         ["number_outpatient", "number_emergency", "number_inpatient"]
     ].sum(axis=1)
+    record("7. n_visits_last_year")
 
     # 8. Drop what is neither a feature nor a reference column (D-006, D-007)
-    df = df.drop(columns=CONSTANT + RARE_MEDICATIONS + ["readmitted"])
+    df = df.drop(columns=CONSTANT + RARE_MEDICATIONS)
+    record("8a. Drop constant columns, weight and rare drugs (D-006, D-007)")
+    df = df.drop(columns=["readmitted"])
+    record("8b. Drop the raw outcome readmitted (D-011)")
     for col in df.select_dtypes("category").columns:
         df[col] = df[col].astype(str)
     return df.reset_index(drop=True)

@@ -5,6 +5,7 @@ columns are the columns of `reports/experiments-readmission.csv`.
 """
 
 import numpy as np
+import pandas as pd
 from sklearn import metrics
 
 
@@ -90,6 +91,47 @@ def leaderboard(log, base_rate, family=None):
             f"{base_rate:.3f}; Lift = PR-AUC / that rate."
         )
     )
+
+
+def rate_by(df, col, target, group, z=1.96):
+    """The rate of `target` in each level of `col`, with an interval by patient.
+
+    The encounters of one patient are not independent, so the usual binomial
+    interval would be too narrow. The standard error is the cluster-robust one of a
+    ratio: sqrt(G / (G - 1) * sum_g (y_g - rate * n_g)^2) / n, where y_g and n_g are
+    the positives and the encounters of patient g, and G the number of patients.
+
+    Args:
+        df (pandas.DataFrame): One row per encounter.
+        col (str): The column whose levels are compared.
+        target (str): The 0/1 outcome column.
+        group (str): The patient column.
+        z (float): 1.96 for a 95% interval (normal approximation).
+
+    Returns:
+        pandas.DataFrame: One row per level, in order of appearance in `df`: the
+        number of encounters and patients, the rate and its interval `low`-`high`
+        (clipped to [0, 1]).
+    """
+    rows = []
+    for level, part in df.groupby(col, observed=True, sort=False):
+        n, rate = len(part), part[target].mean()
+        per_patient = part.groupby(group)[target].agg(["sum", "size"])
+        patients = len(per_patient)
+        residuals = per_patient["sum"] - rate * per_patient["size"]
+        correction = patients / max(patients - 1, 1)
+        se = np.sqrt(correction * (residuals**2).sum()) / n
+        rows.append(
+            {
+                col: level,
+                "encounters": n,
+                "patients": patients,
+                "rate": rate,
+                "low": max(rate - z * se, 0.0),
+                "high": min(rate + z * se, 1.0),
+            }
+        )
+    return pd.DataFrame(rows).set_index(col)
 
 
 def cv_summary(cv):

@@ -43,7 +43,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-019 | Choice of the model | Proposed |
 | D-020 | Statistical comparison of models with patient-level uncertainty | Open |
 | D-021 | Nested grouped cross-validation | Open |
-| D-022 | Calibration, decision curve and capacity tiers | Open |
+| D-022 | Calibration, decision curve and capacity tiers | Proposed (calibration and tiers); Open (decision curve) |
 | D-023 | Ranking objectives aligned with the follow-up capacity | Open |
 | D-024 | Clinically grounded features and a LACE baseline | Open |
 | D-025 | Using the three-level outcome | Open |
@@ -51,6 +51,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-027 | Conformal prediction for risk with guarantees | Open |
 | D-028 | Fairness audit | Open |
 | D-029 | Explainability, robustness and data limits | Open |
+| D-030 | Audit against scikit-learn's "Common pitfalls and recommended practices" | Accepted |
 
 ---
 
@@ -108,6 +109,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** Group them into a single `other_meds` feature.
 - **Impact:** −10 columns. The next least used drug is `acarbose` (308 rows), which is kept.
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A2 (`other_meds` feature): LR 0.0000 (tie), GB identical predictions (the feature is never used: only about 200 encounters take a rare drug). **Recommendation: accept the proposal** (simpler). Implemented as the default of `clean(rare_meds="drop")`; the medication counts are computed before the drop.
+- **Update (2026-10-20):** The list was chosen by counting non-"No" rows on **all** encounters, test patients included. The count does not use the target, and A2 shows that these drugs carry no signal, so the effect on the scores is negligible; but strictly it is a choice learned from data that include the test set (D-030). The list is now a fixed constant (`RARE_MEDICATIONS` in `src/features.py`) and is not recomputed. The strict alternative would be to count on the training rows only, inside the pipeline.
 
 ## D-008 — Explicit levels for missing categorical values
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -167,6 +169,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Rationale:** Validation is never used for tuning, so its scores are not optimised directly; the paired fold-by-fold rule separates real gains from the luck of one sample of patients.
 - **Alternatives considered:** Nested cross-validation (D-021), more rigorous and about five times slower.
 - **Limitations:** The shortlist is chosen on validation and step (3) includes validation, so the step-(3) scores are slightly optimistic; the single test evaluation measures by how much.
+- **Update (2026-10-20):** (3b) The shortlist is also refitted with 5 seeds on train and scored on validation, so that a gap is not mistaken for the luck of one seed (D-030). (4) The test set scores the chosen model with **both** calibration options of D-022; the primary option is declared (`PRIMARY`) from the rehearsal on validation **before** the test is opened, and the notebook refuses to open it otherwise. Both rows are logged; nothing is chosen after.
 
 ## D-016 — Evaluation metrics and class imbalance
 - **Date:** 2026-10-19 · **Status:** Accepted · **Implemented in:** `src/evaluation.py`
@@ -193,6 +196,15 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** The ensemble as production model; EBM (0.005 behind XGBoost on validation, fully readable); the logistic regression (simplest, clearly weaker).
 - **Next:** Calibration and capacity tiers on validation (D-022) before the single test evaluation. To be compared with the final model of `LA_Models/` on the same test patients.
 
+## D-030 — Audit against scikit-learn's "Common pitfalls and recommended practices"
+- **Date:** 2026-10-20 · **Status:** Accepted · **Implemented in:** `src/calibration.py`, `src/models.py` (`with_seed`), `DC_Models/02_model_exploration.ipynb`
+- **Decision:** The code was checked against chapter 12 of the scikit-learn user guide (inconsistent preprocessing, data leakage, controlling randomness). What holds, and what was fixed:
+  - **12.1 Inconsistent preprocessing:** holds. Every learned step is inside the pipeline (D-014), refitted with the model. **Fixed:** the calibration planned in Stage 6 did not reach the test (Stage 7 scored an uncalibrated refit), and a calibrator learned for the train-only model would not match a model refitted on train + validation: two consistent options, D-022.
+  - **12.2 Data leakage:** holds for every split, fold and search (grouped by patient, D-010, D-014, D-017); the test set is still closed. Three looks at data that include the test patients, all small: (a) the rare-medication list was counted on all encounters (D-007, update); (b) `LA_Models/01_preprocessing_and_models.ipynb`, cell 10, shows the `<30` rate by ID code on all encounters, test patients included (a descriptive table of the decoded codes, used to argue that they are categories, not numbers; no rule or threshold is taken from it); (c) the clinical-area mapping of A3 was written after seeing rates by specialty on all the data (already stated in `01_cleaning_variants`). From now on target rates are looked at on training rows only.
+  - **12.3 Controlling randomness:** splitters receive an integer seed (same folds for every model and search, so fold-by-fold comparisons are valid); estimators receive the integer `SEED` (reproducible runs). **Fixed:** the elastic-net logistic regression (`saga`, which shuffles the rows) had no `random_state`, so its score changed from run to run. **Added:** the scikit-learn guide warns that with one integer seed a model may look good because of that seed; the shortlist of 5.12 is now refitted with 5 seeds. Results: RESULTS_PLACEHOLDER
+- **Alternatives considered:** Passing a `RandomState` instance to the estimators, as the guide suggests for robust cross-validation. Not adopted: `clone` deep-copies the instance (scikit-learn 1.9), so every fold would start from the same state anyway, and XGBoost, CatBoost and Keras take integer seeds only. The multi-seed check gives the same information explicitly.
+- **Known limits:** `KerasMLPClassifier` calls `keras.utils.set_random_seed`, which also sets NumPy's global seed; harmless as long as every other estimator gets an explicit `random_state`. TensorFlow on a multi-threaded CPU is not bit-for-bit deterministic, so the Keras model and the ensemble can move in the fourth decimal between runs.
+
 ## Research directions
 
 The entries below are **Open**: ideas to make the work more rigorous or to go beyond the project plan, ordered by expected value. Each one states how it would be done without leakage.
@@ -213,6 +225,7 @@ The entries below are **Open**: ideas to make the work more rigorous or to go be
 - **Date:** 2026-10-19 · **Status:** Open (planned, Phase 2 of the project plan)
 - **Options:** Calibrate the chosen pipeline on validation (`CalibratedClassifierCV(FrozenEstimator(...))`: isotonic, Platt/sigmoid; or Venn–Abers predictors, which give calibrated intervals). Assess with the calibration hierarchy of Van Calster et al. (2019): calibration-in-the-large, calibration slope and intercept, flexible reliability curves, plus the Brier score and its decomposition. **Decision curve analysis** (Vickers & Elkin 2006): net benefit against the threshold probability, compared with "follow up everyone" and "nobody". High / Medium / Low tiers set by capacity (top 10%, next 20%), with expected readmissions caught per tier and its patient-bootstrap interval.
 - **Leakage rule:** Calibration and cut-offs learned on validation (or out-of-fold predictions), never on test.
+- **Update (2026-10-20), status Proposed for calibration and tiers:** The calibrator and the cut-offs must also be learned **for the model that is scored**: the plan of `02` calibrated the train-only model on validation, while Stage 7 refitted an uncalibrated pipeline on train + validation (D-030). Two consistent options, implemented in `src/calibration.py` and Stage 6 of `DC_Models/02_model_exploration.ipynb`: **A, holdout**: model fitted on train, calibrator and cut-offs from its predictions on validation (`CalibratedClassifierCV(FrozenEstimator(...))`); **B, out of fold**: model refitted on train + validation, calibrator and cut-offs from its grouped out-of-fold predictions (`CalibratedClassifierCV(ensemble=False)`, folds cut by patient). Both are rehearsed with validation in the role of the test (A: 75 / 25 of the training patients; B: out of fold on train), then both are scored once on test (D-015). Isotonic calibration, tiers High = top 10%, High + Medium = top 30%. Rehearsal results: RESULTS_PLACEHOLDER
 
 ## D-023 — Ranking objectives aligned with the follow-up capacity
 - **Date:** 2026-10-19 · **Status:** Open

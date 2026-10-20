@@ -36,8 +36,9 @@
 # | 3 | Preprocessing as pipelines | ✅ |
 # | 4 | Grouped cross-validation, results log, two baselines | ✅ |
 # | 5 | Model families: linear, EBM, bagging, boosting (sklearn, XGBoost, LightGBM, CatBoost), AFT, Keras, ensemble | ✅ |
-# | 6 | Calibration, capacity tiers, SHAP, fairness | 🔲 |
-# | 7 | The test set, once | 🔲 locked |
+# | 6 | Calibration (two options, rehearsed on validation) and capacity tiers | ✅ |
+# | 6 | Decision curve, SHAP, fairness | 🔲 |
+# | 7 | The test set, once, for both calibration options | 🔲 locked |
 
 # %% [markdown]
 # ## The leakage rules of this notebook
@@ -385,7 +386,12 @@ from sklearn.ensemble import (
 )
 from xgboost import XGBClassifier
 
-from models import CatBoostNativeClassifier, KerasMLPClassifier, XGBAFTClassifier
+from models import (
+    CatBoostNativeClassifier,
+    KerasMLPClassifier,
+    XGBAFTClassifier,
+    with_seed,
+)
 
 N_ITER = {
     "hgb": 10,
@@ -473,7 +479,8 @@ tuned["hgb"] = tune(
 # **5.2 Elastic-net logistic regression.** A mix of the L1 penalty (which can set
 # weights to exactly 0, selecting features) and L2 (which shrinks them). Still a linear
 # model, as easy to explain as the baseline. The `saga` solver is slow on 60,000 rows
-# (about 30 seconds), so it is not searched.
+# (about 30 seconds), so it is not searched. Unlike `lbfgs`, `saga` shuffles the rows,
+# so it needs the seed too.
 
 # %%
 run(
@@ -486,6 +493,7 @@ run(
             solver="saga",
             class_weight="balanced",
             max_iter=3000,
+            random_state=SEED,
         ),
     ),
     family="linear",
@@ -777,6 +785,46 @@ pd.DataFrame(
 ).style.format("{:.4f}", subset=["Mean PR-AUC difference"])
 
 # %% [markdown]
+# **Is the gain larger than the luck of the seed?** Every model above gets the integer
+# `SEED`, so every fold and every refit uses the same random draws (rows and columns
+# sampled by the trees, initial weights of the network). That makes the notebook
+# reproducible, but a model could rank first only because seed 42 suits it
+# (scikit-learn, "Common pitfalls", section 12.3). Here the same shortlist is refitted
+# on the training rows with 5 seeds (`with_seed` changes every `random_state` inside the
+# pipeline, ensemble members included) and scored on validation. The rows and the folds
+# do not change: only the models' seeds. A gap between two models smaller than their
+# spread across seeds is luck, not the model. The logistic regression has no random
+# draw (`lbfgs`), so its spread is 0.
+
+# %%
+SEEDS = [SEED + i for i in range(5)]
+seed_rows = []
+for name in shortlist:
+    for seed in SEEDS:
+        model = with_seed(pipelines[name], seed).fit(X_train, y_train)
+        p = model.predict_proba(X_val)[:, 1]
+        seed_rows.append(
+            {"model": name, "seed": seed, "pr_auc": scores(y_val, p)["pr_auc"]}
+        )
+by_seed = pd.DataFrame(seed_rows).pivot(index="seed", columns="model", values="pr_auc")
+
+seed_spread = by_seed.agg(["mean", "std", "min", "max"]).T
+seed_spread = seed_spread.sort_values("mean", ascending=False)
+top_seed = seed_spread.index[0]
+seed_spread["Gap to the top"] = seed_spread.loc[top_seed, "mean"] - seed_spread["mean"]
+seed_spread[f"Seeds won by {top_seed} (of 5)"] = (
+    by_seed.rsub(by_seed[top_seed], axis=0) > 0
+).sum()
+seed_spread.index.name = None
+seed_spread.rename(
+    columns={"mean": "Mean", "std": "Std", "min": "Worst seed", "max": "Best seed"}
+).style.format(
+    "{:.4f}", subset=["Mean", "Std", "Worst seed", "Best seed", "Gap to the top"]
+).set_caption(
+    "Validation PR-AUC over 5 seeds of the models (same rows, same folds)"
+)
+
+# %% [markdown]
 # **5.13** The log, saved to `reports/experiments-readmission-dc.csv`; every model on
 # validation as a chart (the axis starts at 0.19 to make the small differences
 # visible); and the final ranking.
@@ -825,18 +873,169 @@ board()
 
 # %% [markdown]
 # ----------------------------------------------------------------------
-# # STAGE 6. FROM A SCORE TO A DECISION (to do)
+# # STAGE 6. FROM A SCORE TO A DECISION
 # ----------------------------------------------------------------------
 # What the project plan asks for Phase 2, on the chosen pipeline, using **validation or
-# out-of-fold predictions only**:
+# out-of-fold predictions only**. Done: 6.1 calibration and 6.2 capacity tiers. To do:
+# 6.3 decision curve, 6.4 SHAP, 6.5 fairness.
 #
-# - **6.1 Calibration.** With balanced class weights the probabilities are inflated.
-#   Wrap the fitted pipeline in `CalibratedClassifierCV(FrozenEstimator(model),
-#   method="isotonic")`, fit it on validation, and draw a reliability curve
-#   (`CalibrationDisplay`). Then a "20% risk" means roughly 20%.
-# - **6.2 Capacity tiers.** High / Medium / Low cutoffs set by follow-up capacity
-#   (e.g. top 10% and top 30% of validation scores), not by 0.5: for each capacity,
-#   the threshold, the precision and the share of readmissions caught.
+# **6.0 The chosen model.** `CHOSEN` is the proposal of the decision log (D-019), the
+# tuned XGBoost. If the team chooses another model, change it here: Stages 6 and 7 both
+# use it.
+
+# %%
+from sklearn.calibration import CalibrationDisplay
+from sklearn.model_selection import GroupShuffleSplit
+
+from calibration import (
+    capacity_cutoffs,
+    holdout_calibration,
+    out_of_fold_calibration,
+    tier_report,
+)
+
+CHOSEN = "XGBoost (tuned)"
+CALIBRATION = "isotonic"  # or "sigmoid" (Platt scaling)
+CAPACITY = {"High (top 10%)": 0.10, "High + Medium (top 30%)": 0.30}
+assert CHOSEN in pipelines, f"{CHOSEN} is not in the results log"
+
+# %% [markdown]
+# **6.1 Calibration, two options.** With balanced class weights the probabilities are
+# inflated (the model is trained as if half the encounters were readmitted), so they
+# must be calibrated before the hospital reads them as risks. The calibrator and the
+# capacity cut-offs are learned from the data, so they must come from patients the
+# model was not fitted on, and they must be learned **for the model that is scored**
+# (scikit-learn, "Common pitfalls", 12.1). Two ways to respect both
+# (`src/calibration.py`):
+#
+# - **A, holdout.** The model is fitted on some patients; the calibrator and the
+#   cut-offs are learned from its predictions on other patients. The scored model is
+#   exactly the calibrated one, but it learns from fewer rows.
+# - **B, out of fold.** The model is fitted on all the rows; the calibrator and the
+#   cut-offs are learned from grouped out-of-fold predictions on the same rows
+#   (`CalibratedClassifierCV(ensemble=False)`, folds cut by patient). The model learns
+#   from more rows; the calibrator learns from the fold models, each fitted on 4/5 of
+#   them, a close stand-in for the final one.
+#
+# Stage 7 scores both on the test set, but the **primary** option must be declared
+# before the test is opened, otherwise the test would be used to choose. To choose it
+# without the test, both options are first **rehearsed with validation in the role of
+# the test**, using the training rows only:
+#
+# | | Rehearsal (here) | Final (Stage 7) |
+# |---|---|---|
+# | A: model fitted on | 75% of the training patients | train |
+# | A: calibrator and cut-offs from | the other 25% of the training patients | validation |
+# | B: model fitted on | train | train + validation |
+# | B: calibrator and cut-offs from | out-of-fold predictions on train | out-of-fold predictions on train + validation |
+# | Scored on | validation | test |
+#
+# The 75 / 25 cut keeps the proportions of the final setup (train / validation = 60 /
+# 20). The first row of the table, `Not calibrated`, is the chosen model as logged in
+# Stage 5: the same ranking, inflated risks.
+
+
+# %%
+def both_options(fit_rows, cal_rows):
+    """Options A and B on the same patients: {option: (calibrated model, reference)}.
+
+    A fits the chosen pipeline on `fit_rows` and calibrates it on `cal_rows`; B fits it
+    on both together and calibrates it on their grouped out-of-fold predictions. The
+    reference predictions are those the capacity cut-offs are taken from.
+    """
+    assert not set(fit_rows[GROUP]) & set(cal_rows[GROUP])
+    pipe = pipelines[CHOSEN]
+    rows = pd.concat([fit_rows, cal_rows])
+    return {
+        "A: holdout": holdout_calibration(
+            pipe,
+            fit_rows[FEATURES],
+            fit_rows[TARGET],
+            cal_rows[FEATURES],
+            cal_rows[TARGET],
+            method=CALIBRATION,
+        ),
+        "B: out of fold": out_of_fold_calibration(
+            pipe, rows[FEATURES], rows[TARGET], rows[GROUP], CV, method=CALIBRATION
+        ),
+    }
+
+
+def report(options, rows):
+    """Scores and capacity tiers of each option on `rows`, and its predictions.
+
+    An option whose reference is None (a model that is not calibrated) gets scores
+    but no tiers.
+    """
+    summary, tiers, predicted = {}, [], {}
+    for name, (model, reference) in options.items():
+        p = model.predict_proba(rows[FEATURES])[:, 1]
+        predicted[name] = p
+        s = scores(rows[TARGET], p)
+        summary[name] = {
+            "PR-AUC": s["pr_auc"],
+            "ROC-AUC": s["roc_auc"],
+            "Brier": s["brier"],
+            "Log loss": s["log_loss"],
+            "Mean risk": p.mean(),
+            "Observed <30 rate": rows[TARGET].mean(),
+        }
+        if reference is not None:
+            cutoffs = capacity_cutoffs(reference, CAPACITY)
+            tiers.append(tier_report(rows[TARGET], p, cutoffs).assign(option=name))
+    tiers = pd.concat(tiers).rename_axis("tier").reset_index()
+    return pd.DataFrame(summary).T, tiers.set_index(["option", "tier"]), predicted
+
+
+inner = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=SEED)
+fit_idx, cal_idx = next(inner.split(train, groups=train[GROUP]))
+rehearsal = both_options(train.iloc[fit_idx], train.iloc[cal_idx])
+rehearsal_summary, rehearsal_tiers, rehearsal_p = report(
+    {"Not calibrated": (fitted[CHOSEN], None)} | rehearsal, val
+)
+rehearsal_summary.style.format("{:.4f}").set_caption(
+    f"{CHOSEN} on validation (rehearsal). Brier and log loss: lower is better"
+)
+
+# %% [markdown]
+# **6.2 Capacity tiers.** Each cut-off was learned on the reference predictions (A: the
+# 25% of training patients; B: out of fold on train) and applied to validation. If the
+# cut-offs transfer, the share flagged on validation is close to the intended 10% and
+# 30%; if the risks are calibrated, in every tier the mean predicted risk is close to
+# the observed `<30` rate. `recall` is the share of all readmissions the tier catches.
+
+# %%
+rehearsal_tiers.rename(
+    columns={
+        "cutoff": "Cut-off",
+        "share_flagged": "Share flagged",
+        "observed_rate": "Observed <30 rate",
+        "mean_risk": "Mean predicted risk",
+        "recall": "Readmissions caught",
+    }
+).style.format("{:.3f}").set_caption("Capacity tiers on validation (rehearsal)")
+
+# %% [markdown]
+# The reliability curve: validation encounters in 10 groups of equal size by predicted
+# risk; on the diagonal, the predicted risk equals the observed rate.
+
+# %%
+fig, ax = plt.subplots(figsize=(6, 6))
+for name, p in rehearsal_p.items():
+    CalibrationDisplay.from_predictions(
+        y_val, p, n_bins=10, strategy="quantile", name=name, ax=ax
+    )
+ax.set_title("Reliability on validation (rehearsal)", loc="left")
+for side in ["top", "right"]:
+    ax.spines[side].set_visible(False)
+plt.show()
+
+# %% [markdown]
+# **What the rehearsal says.** RESULTS_PLACEHOLDER
+
+# %% [markdown]
+# **Still to do** (same rule: validation or out-of-fold predictions only):
+#
 # - **6.3 Decision curve** (net benefit against the threshold), on validation.
 # - **6.4 SHAP** for the winner: global importance and per-patient reasons for the
 #   hospital worklist (`shap` is in `requirements.txt`).
@@ -848,26 +1047,39 @@ board()
 # ----------------------------------------------------------------------
 # # STAGE 7. THE TEST SET, ONCE (locked)
 # ----------------------------------------------------------------------
-# Only after the choice of 5.6 and the calibration of 6.1. The chosen pipeline is
-# refitted on train + validation (preprocessing included, because it is inside the
-# pipeline), scored once on test, and the row is added to the log with the note
-# "test opened once". Nothing is chosen or changed after this cell. To open it, set
-# `OPEN_TEST = True` and `CHOSEN` to the winner's name.
+# Only after the choice of the model (5.14, D-019) and the rehearsal of 6.1. Both
+# calibration options are built on train + validation, as in the table of 6.1, and
+# scored once on test; both rows are added to the log.
+#
+# **`PRIMARY` must be set before the test is opened**, from the rehearsal: it is the
+# option the project reports and would deploy, the other one is reported as secondary.
+# Nothing is chosen or changed after this cell: if the secondary option does better on
+# test, that is reported, not acted upon. The tier table checks the cut-offs on new
+# patients: do they still flag about 10% and 30% of the test encounters?
+#
+# To open it: set `PRIMARY`, then `OPEN_TEST = True`.
 
 # %%
 OPEN_TEST = False
-CHOSEN = None
+PRIMARY = None  # "A: holdout" or "B: out of fold", declared BEFORE opening the test
 
 if OPEN_TEST:
-    dev = pd.concat([train, val])
-    final = clone(pipelines[CHOSEN]).fit(dev[FEATURES], dev[TARGET])
-    p_test = final.predict_proba(test[FEATURES])[:, 1]
-    results.append(
-        {"date": today, "model": CHOSEN, "family": "", "dataset": "test"}
-        | scores(test[TARGET], p_test)
-        | {"note": "refit on train+validation, test opened once"}
-    )
+    assert PRIMARY in ("A: holdout", "B: out of fold"), "declare PRIMARY first"
+    final = both_options(train, val)
+    test_summary, test_tiers, test_p = report(final, test)
+    for name, p in test_p.items():
+        role = "primary" if name == PRIMARY else "secondary"
+        results.append(
+            {
+                "date": today,
+                "model": f"{CHOSEN} [{name}]",
+                "family": "",
+                "dataset": "test",
+            }
+            | scores(test[TARGET], p)
+            | {"note": f"{role}, {CALIBRATION} calibration, test opened once"}
+        )
     show().to_csv(LOG, index=False)
-    display(show().query("model == @CHOSEN"))
+    display(test_summary.round(4), test_tiers.round(4))
 else:
     print("Test set still closed.")

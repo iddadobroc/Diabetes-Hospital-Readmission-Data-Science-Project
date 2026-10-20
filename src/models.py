@@ -3,6 +3,7 @@
 Both classes follow the scikit-learn estimator contract (`fit`, `predict_proba`,
 `get_params`), so they can sit inside a `Pipeline` and be cloned, cross-validated and
 tuned exactly like the other models, with the preprocessing refitted in every fold.
+`with_seed` changes the seed of any of them, to check how much a score owes to it.
 """
 
 import os
@@ -11,10 +12,32 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.utils.class_weight import compute_sample_weight
 
 HORIZON_DAYS = 30  # the readmission window of the target
+
+
+def with_seed(estimator, seed):
+    """A clone of `estimator` with every `random_state`, nested ones included, set.
+
+    Used to check that a model's score does not depend on its seed: the pipelines of
+    the notebooks pass one integer seed to every model, so every fold and every refit
+    uses the same random draws (scikit-learn, "Common pitfalls", section 12.3).
+
+    Args:
+        estimator: A scikit-learn estimator, pipeline or ensemble.
+        seed (int): The new seed.
+
+    Returns:
+        The unfitted clone.
+    """
+    names = [
+        name
+        for name in estimator.get_params(deep=True)
+        if name == "random_state" or name.endswith("__random_state")
+    ]
+    return clone(estimator).set_params(**dict.fromkeys(names, seed))
 
 
 class XGBAFTClassifier(ClassifierMixin, BaseEstimator):
