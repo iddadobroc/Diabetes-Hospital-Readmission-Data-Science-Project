@@ -15,3 +15,6 @@ reports/*.html
 
 !reports/.gitkeep
 .DS_Store
+
+# Local instructions for Claude Code: not shared in the repository
+CLAUDE.md
