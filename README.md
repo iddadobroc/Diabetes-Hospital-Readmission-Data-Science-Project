@@ -2,7 +2,7 @@
 try to contribute
 ## Project structure
 
-- `notebooks/`: the shared analysis: `EDA Diabetes Project.ipynb` (first look at the raw data), `02_data_cleaning.ipynb` (the cleaning step by step and the frozen split), `03_eda_target.ipynb` (the `<30` rate on the training rows).
+- `notebooks/`: the shared analysis: `01_eda_raw.ipynb` (first look at the raw data), `02_data_cleaning.ipynb` (the cleaning step by step and the frozen split), `03_eda_target.ipynb` (the `<30` rate on the training rows).
 - `LA_Models/`, `DC_Models/`: modelling notebooks of two independent work streams, compared at the end.
 - In `DC_Models/` and for `notebooks/02_*` and `03_*`, each `.ipynb` has a `.py` copy in Jupytext "percent" format (code and text only, no outputs).
 - `src/`: shared Python code, imported by the notebooks:
@@ -25,7 +25,7 @@ Python 3.13, a virtual environment in `.venv/` and `pip install -r requirements.
 
 ## Running the EDA notebook
 
-1. Open `notebooks/EDA Diabetes Project.ipynb` in VS Code.
+1. Open `notebooks/01_eda_raw.ipynb` in VS Code.
 2. Select the kernel: **Select Kernel → Python Environments → `.venv` (Python 3.13)**. You can check it with the `print(sys.executable)` cell, which must point to `.venv`.
 3. Click **Run All**.
 4. To regenerate the profiling report, uncomment the `ProfileReport` cell and run it (it takes a few minutes). The report is saved to `reports/df_diabetes_report.html` and can be opened in a browser.
