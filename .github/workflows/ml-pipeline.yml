@@ -6,7 +6,7 @@
 # One-time setup (see README, "Deployment"):
 #   - repository secret HF_TOKEN: a Hugging Face token with Write access;
 #   - the Space <hf user>/diabetes-readmission-app created by hand (Gradio, Blank,
-#     CPU basic); the model repository is created by the first upload.
+#     ZeroGPU or CPU basic); the model repository is created by the first upload.
 # Release: git tag v1.0 && git push origin v1.0  (a tag cannot be reused: on a failure,
 # fix and push v1.1).
 

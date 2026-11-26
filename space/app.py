@@ -37,6 +37,11 @@ sys.path.insert(0, str(HERE))
 if not (HERE / "scoring.py").exists():
     sys.path.insert(0, str(HERE.parent / "src"))
 
+try:  # Hugging Face ZeroGPU runtime; absent when the app runs locally
+    import spaces
+except ImportError:
+    spaces = None
+
 import ibcs  # noqa: E402
 from features import DEATH_OR_HOSPICE, FEATURES  # noqa: E402
 from scoring import (  # noqa: E402
@@ -46,6 +51,18 @@ from scoring import (  # noqa: E402
     prepare_discharges,
     raw_scores,
 )
+
+
+# --- ZeroGPU ------------------------------------------------------------------------
+# A ZeroGPU Space must declare at least one @spaces.GPU function (course, W8). The
+# model is a tree ensemble that runs on CPU, so the marker below is never called: the
+# predictions do not use the daily GPU quota, and the live demo cannot run out of it.
+if spaces is not None:
+
+    @spaces.GPU
+    def zerogpu_marker():
+        """Never called: only satisfies the ZeroGPU startup check."""
+        return None
 
 
 # --- The published model ----------------------------------------------------------

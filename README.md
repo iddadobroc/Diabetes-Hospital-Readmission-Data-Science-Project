@@ -11,8 +11,8 @@ clinical score** and 346 more than choosing at random.
 
 | | Link |
 |---|---|
-| Live demo (Gradio Space) | `https://huggingface.co/spaces/<hf-user>/diabetes-readmission-app` (published by the pipeline, see [Deployment](#deployment)) |
-| Model repository and card | `https://huggingface.co/<hf-user>/diabetes-readmission-model` · [docs/model_card.md](docs/model_card.md) |
+| Live demo (Gradio Space) | `https://huggingface.co/spaces/davidecorbo/diabetes-readmission-app` |
+| Model repository and card | `https://huggingface.co/davidecorbo/diabetes-readmission-model` · [docs/model_card.md](docs/model_card.md) |
 | Every methodological decision | [docs/decision_log.md](docs/decision_log.md) (D-001 to D-032) |
 | Course brief and project plan | [docs/](docs/) |
 
@@ -117,7 +117,7 @@ release, the Hugging Face model tag and the version the Space loads are the same
 
 One-time setup:
 
-1. On Hugging Face, create the Space `diabetes-readmission-app` by hand: SDK **Gradio**, template **Blank**, hardware **CPU basic** (free; the model needs no GPU).
+1. On Hugging Face, create the Space `diabetes-readmission-app` by hand: SDK **Gradio**, template **Blank**, hardware **ZeroGPU** (free tier; the app declares the @spaces.GPU marker the runtime requires, and predictions run on CPU without using the GPU quota).
 2. Create a Hugging Face token with **Write** access and store it in GitHub: *Settings → Secrets and variables → Actions → New repository secret*, name `HF_TOKEN`.
 
 Release:
@@ -128,7 +128,7 @@ git push origin v1.0
 ```
 
 The workflow then tests, trains, checks the gate, creates the GitHub release, uploads
-the model and its card to `<hf-user>/diabetes-readmission-model` with tag `v1.0`, and
+the model and its card to `davidecorbo/diabetes-readmission-model` with tag `v1.0`, and
 uploads `space/` (with the shared modules of `src/` and the figures) to the Space. A tag
 cannot be reused: after a failure, fix and push `v1.1`.
 
