@@ -43,8 +43,10 @@ FINAL_PARAMS = {
 CAPACITY = {"High": 0.10, "Medium": 0.30}
 
 # Calibration option used for the deployed model (D-022): "A" (holdout) or "B" (out
-# of fold). Set from the rehearsal on validation, BEFORE the test set is opened (D-032).
-PRIMARY = None
+# of fold). Set from the rehearsal on validation, BEFORE the test set is opened (D-032):
+# B had the lower validation Brier score (0.0963 against 0.0968; the gap is under 0.001,
+# so B by the tie rule too), calibration slope 0.99 and a High tier of 9.98%.
+PRIMARY = "B"
 
 # Quality gate (D-032), written before the test set is opened: the published model
 # must meet every line on the test patients, or the pipeline stops.
@@ -108,6 +110,35 @@ def fit_calibrated(option, X, y, groups, seed=SEED, calibration_share=0.25):
             return_raw=True,
         )
     raise ValueError(f"option must be 'A' or 'B', not {option!r}")
+
+
+RANKING_METRICS = ["pr_auc", "roc_auc", "precision_top10", "recall_top10"]
+
+
+def evaluate(y, p, raw):
+    """The metrics of the final model: ranking on the raw score, the rest on the risk.
+
+    Isotonic calibration turns the score into a step function, so the calibrated risks
+    have ties that blur the ranking (validation PR-AUC 0.220 instead of 0.228 with the
+    same order). The worklist ranks by the raw score (D-022), so PR-AUC, ROC-AUC and the
+    top-10% metrics are computed on it; log loss, Brier and the threshold metrics on the
+    calibrated risk, which is what is shown to the user.
+
+    Args:
+        y (array-like): True labels, 0 or 1.
+        p (numpy.ndarray): Calibrated risks.
+        raw (numpy.ndarray): Raw scores of the same rows.
+
+    Returns:
+        dict: The keys of `evaluation.scores`.
+    """
+    from evaluation import scores
+
+    out = scores(y, p)
+    ranking = scores(y, raw)
+    for key in RANKING_METRICS:
+        out[key] = ranking[key]
+    return out
 
 
 def assign_tiers(raw, cutoffs):

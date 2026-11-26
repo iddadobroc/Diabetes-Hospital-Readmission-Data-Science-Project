@@ -228,6 +228,13 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Quality gate**, on the test patients: PR-AUC at least 0.20; at least 0.01 above the LACE baseline; recall in the top 10% at least 0.20; calibration-in-the-large |mean risk − observed rate| at most 1 pp. If one line fails, `check_quality.py` stops the pipeline and the model is not published; the model is not changed after the test to pass it.
 - **Final fit:** the `PRIMARY` option on train + validation (79,541 encounters), scored once on test (19,802 encounters). The same recipe is what `train.py` rebuilds in the GitHub pipeline and publishes to Hugging Face.
 - **Results:** added below as Evidence, rehearsal first, test once.
+- **Evidence (2026-11-26), rehearsal on validation, before the test** (`DC_Models/03_final_model`, Stages 2-6; both options fitted on train only):
+  - 5 seeds: validation PR-AUC 0.2283 ± 0.0011 (0.2268..0.2294), so gaps between models below ~0.002 are seed noise.
+  - Calibration: A Brier 0.0968, mean risk 10.9% against 11.4% observed (−0.47 pp), slope 0.88, High tier 9.4% of encounters; **B** Brier 0.0963, 11.5% against 11.4% (+0.10 pp), slope 0.99, High tier 9.98%. Brier A − B = +0.00047 → **`PRIMARY = "B"`** (lower Brier, and the tie rule gives B as well). Declared in `src/final_model.py`.
+  - Tiers with B: High = 10.0% of encounters, `<30` rate 27.3%, 23.9% of the readmissions; High + Medium = 30.2%, 19.5%, 51.6%.
+  - Drivers (TreeSHAP, 5 grouped folds of train): the rankings correlate at least 0.958 between folds; 11 of the 12 largest features are the same in every fold; `number_inpatient` and the discharge destination lead.
+  - Baselines: LACE PR-AUC 0.139, logistic regression 0.210, random 0.114.
+- **Clarification (2026-11-26), before the test:** the isotonic risks have ties that lower PR-AUC (0.220 instead of 0.228 on validation for the same order). The worklist ranks by the raw score, so the ranking metrics of the gate (PR-AUC, recall in the top 10%) are computed on the raw score and the calibration line on the calibrated risk (`evaluate()` in `src/final_model.py`). The thresholds are unchanged.
 
 ## Research directions
 
