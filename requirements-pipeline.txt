@@ -1,0 +1,11 @@
+# Pinned dependencies of the GitHub pipeline (train.py, tests, check_quality.py).
+# The same versions as the .venv that produced every number of the decision log,
+# so the model rebuilt in CI is the one measured in DC_Models/03_final_model.
+# requirements.txt (unpinned) is the full development environment (notebooks, Keras...).
+pandas==2.3.3
+numpy==2.3.5
+scipy==1.16.3
+scikit-learn==1.9.1
+xgboost==3.4.1
+joblib==1.6.0
+matplotlib==3.10.0

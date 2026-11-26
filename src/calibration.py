@@ -32,6 +32,8 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.frozen import FrozenEstimator
 from sklearn.model_selection import cross_val_predict
 
+from scoring import raw_scores  # noqa: F401  (re-exported: used with the cut-offs)
+
 
 def holdout_calibration(
     pipe, X_fit, y_fit, X_cal, y_cal, method="isotonic", return_raw=False
@@ -97,25 +99,6 @@ def out_of_fold_calibration(
     if return_raw:
         return calibrated, calibrator.predict(raw), raw
     return calibrated, calibrator.predict(raw)
-
-
-def raw_scores(calibrated, X):
-    """The uncalibrated score of a model returned by the two functions above.
-
-    Both options keep one fitted model inside `calibrated_classifiers_[0]` (a
-    `FrozenEstimator` for A, the model refitted on all the rows for B). Its score
-    orders the encounters exactly like the calibrated risk, without ties.
-
-    Args:
-        calibrated (CalibratedClassifierCV): A fitted model with `ensemble=False` or
-            a frozen estimator, as returned by `holdout_calibration` or
-            `out_of_fold_calibration`.
-        X (pandas.DataFrame): The encounters to score.
-
-    Returns:
-        numpy.ndarray: One raw score per row.
-    """
-    return calibrated.calibrated_classifiers_[0].estimator.predict_proba(X)[:, 1]
 
 
 def capacity_cutoffs(reference, shares):

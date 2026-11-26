@@ -21,3 +21,13 @@ Enterprise Data Science Bootcamp(slides and labs from the professor classes)/
 
 # Editor settings
 .vscode/
+
+# Model artifacts: built by train.py, published as a GitHub release and on Hugging Face
+models/
+# Shared modules copied into the Space bundle by the pipeline (the source is src/)
+space/features.py
+space/data_prep.py
+space/scoring.py
+space/ibcs.py
+space/figures/
+space/sample_discharges.csv

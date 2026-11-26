@@ -21,6 +21,12 @@ from xgboost import XGBClassifier
 from calibration import holdout_calibration, out_of_fold_calibration
 from features import GROUP
 from preprocessing import make_pipeline
+from scoring import (  # noqa: F401  (re-exported for the notebook and train.py)
+    assign_tiers,
+    contributions,
+    inner_pipeline,
+    raw_scores,
+)
 
 SEED = 42
 
@@ -139,24 +145,6 @@ def evaluate(y, p, raw):
     for key in RANKING_METRICS:
         out[key] = ranking[key]
     return out
-
-
-def assign_tiers(raw, cutoffs):
-    """The tier of each encounter from its raw score and the capacity cut-offs.
-
-    Args:
-        raw (array-like): Raw scores (`calibration.raw_scores`).
-        cutoffs (dict): {"High": c1, "Medium": c2} with c1 >= c2, on raw scores.
-
-    Returns:
-        numpy.ndarray: "High", "Medium" or "Low" for each encounter.
-    """
-    raw = np.asarray(raw)
-    return np.where(
-        raw >= cutoffs["High"],
-        "High",
-        np.where(raw >= cutoffs["Medium"], "Medium", "Low"),
-    )
 
 
 # --- LACE index (D-024): the clinical baseline -----------------------------------
@@ -293,47 +281,3 @@ def lace_input_columns():
 def groups_of(df):
     """The patient of each row, for grouped splits and calibration."""
     return df[GROUP]
-
-
-# --- Explanations (D-029): why one encounter is ranked high -----------------------
-
-
-def inner_pipeline(calibrated):
-    """The fitted preprocessing + XGBoost pipeline inside a calibrated model."""
-    inner = calibrated.calibrated_classifiers_[0].estimator
-    return getattr(inner, "estimator", inner)  # option A wraps it in FrozenEstimator
-
-
-def contributions(pipe, X, features):
-    """TreeSHAP contributions of each original feature to the raw score (log-odds).
-
-    XGBoost computes them natively (`pred_contribs=True`, the same values as
-    `shap.TreeExplainer`). The one-hot columns of a feature are summed back into it,
-    so each encounter gets one value per feature in `features`: positive values push
-    the risk up, negative values down. Calibration is monotone, so the direction
-    holds for the calibrated risk too.
-
-    Args:
-        pipe (Pipeline): A fitted final pipeline ("prep" + XGBoost "model").
-        X (pandas.DataFrame): The encounters, with the feature columns.
-        features (list[str]): The original feature names.
-
-    Returns:
-        pandas.DataFrame: One row per encounter, one column per feature, plus "bias"
-        (the average log-odds of the model).
-    """
-    import xgboost as xgb
-
-    encoded = pipe.named_steps["prep"].transform(X)
-    booster = pipe.named_steps["model"].get_booster()
-    values = booster.predict(xgb.DMatrix(encoded), pred_contribs=True)
-    columns = list(encoded.columns)
-    # Each encoded column belongs to the longest feature name it starts with
-    owner = {}
-    for col in columns:
-        matches = [f for f in features if col == f or col.startswith(f + "_")]
-        owner[col] = max(matches, key=len)
-    frame = pd.DataFrame(values[:, :-1], columns=columns, index=X.index)
-    out = frame.T.groupby(pd.Series(owner)).sum().T[features]
-    out["bias"] = values[:, -1]
-    return out
