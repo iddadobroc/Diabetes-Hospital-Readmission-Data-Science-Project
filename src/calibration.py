@@ -17,6 +17,12 @@ be the one they were learned for (decision log, D-022). Two ways to do it:
 A calibrates exactly the model that is scored, but fits it on fewer rows. B fits the
 model on every row; its calibrator learns from the fold models, each fitted on 4/5 of
 the rows, a close stand-in for the final model.
+
+The capacity cut-offs are taken on the RAW score of the model, not on the calibrated
+risk. Isotonic calibration is a step function: thousands of encounters share the same
+calibrated risk, so "the top 10%" of calibrated risks can hold far more than 10% of the
+encounters. The raw score has the same order (calibration is monotone) and almost no
+ties, so a cut-off on it flags the intended share; the calibrated risk is what is shown.
 """
 
 import numpy as np
@@ -27,7 +33,9 @@ from sklearn.frozen import FrozenEstimator
 from sklearn.model_selection import cross_val_predict
 
 
-def holdout_calibration(pipe, X_fit, y_fit, X_cal, y_cal, method="isotonic"):
+def holdout_calibration(
+    pipe, X_fit, y_fit, X_cal, y_cal, method="isotonic", return_raw=False
+):
     """Option A: fit the model on some patients, calibrate it on other patients.
 
     Args:
@@ -35,18 +43,25 @@ def holdout_calibration(pipe, X_fit, y_fit, X_cal, y_cal, method="isotonic"):
         X_fit, y_fit: The rows the model is fitted on.
         X_cal, y_cal: The rows of OTHER patients the calibrator is fitted on.
         method (str): "isotonic" or "sigmoid" (Platt).
+        return_raw (bool): Also return the raw scores on the calibration rows.
 
     Returns:
         tuple: `(calibrated, reference)`: the calibrated model, and its calibrated
-        predictions on the calibration rows, from which the cut-offs are taken.
+        predictions on the calibration rows. With `return_raw`, a third element: the
+        raw scores of the same rows, from which the capacity cut-offs are taken.
     """
     model = clone(pipe).fit(X_fit, y_fit)
     calibrated = CalibratedClassifierCV(FrozenEstimator(model), method=method)
     calibrated.fit(X_cal, y_cal)
-    return calibrated, calibrated.predict_proba(X_cal)[:, 1]
+    reference = calibrated.predict_proba(X_cal)[:, 1]
+    if return_raw:
+        return calibrated, reference, model.predict_proba(X_cal)[:, 1]
+    return calibrated, reference
 
 
-def out_of_fold_calibration(pipe, X, y, groups, cv, method="isotonic"):
+def out_of_fold_calibration(
+    pipe, X, y, groups, cv, method="isotonic", return_raw=False
+):
     """Option B: fit the model on all the rows, calibrate it out of fold.
 
     `CalibratedClassifierCV(ensemble=False)` collects the out-of-fold scores of
@@ -60,10 +75,12 @@ def out_of_fold_calibration(pipe, X, y, groups, cv, method="isotonic"):
         groups (array-like): The patient of each row.
         cv: A grouped splitter, such as `StratifiedGroupKFold`.
         method (str): "isotonic" or "sigmoid" (Platt).
+        return_raw (bool): Also return the raw out-of-fold scores.
 
     Returns:
         tuple: `(calibrated, reference)`: the calibrated model, and the calibrated
-        out-of-fold predictions on the rows, from which the cut-offs are taken.
+        out-of-fold predictions on the rows. With `return_raw`, a third element: the
+        raw out-of-fold scores, from which the capacity cut-offs are taken.
     """
     splits = list(cv.split(X, y, groups=groups))
     calibrated = CalibratedClassifierCV(pipe, method=method, cv=splits, ensemble=False)
@@ -77,20 +94,42 @@ def out_of_fold_calibration(pipe, X, y, groups, cv, method="isotonic"):
     if raw.ndim == 2:
         raw = raw[:, 1]
     calibrator = calibrated.calibrated_classifiers_[0].calibrators[0]
+    if return_raw:
+        return calibrated, calibrator.predict(raw), raw
     return calibrated, calibrator.predict(raw)
 
 
-def capacity_cutoffs(reference, shares):
-    """The risk above which each share of the reference encounters is flagged.
+def raw_scores(calibrated, X):
+    """The uncalibrated score of a model returned by the two functions above.
+
+    Both options keep one fitted model inside `calibrated_classifiers_[0]` (a
+    `FrozenEstimator` for A, the model refitted on all the rows for B). Its score
+    orders the encounters exactly like the calibrated risk, without ties.
 
     Args:
-        reference (array-like): Calibrated predictions on rows the model was not
-            fitted on (the `reference` of the two calibration functions).
+        calibrated (CalibratedClassifierCV): A fitted model with `ensemble=False` or
+            a frozen estimator, as returned by `holdout_calibration` or
+            `out_of_fold_calibration`.
+        X (pandas.DataFrame): The encounters to score.
+
+    Returns:
+        numpy.ndarray: One raw score per row.
+    """
+    return calibrated.calibrated_classifiers_[0].estimator.predict_proba(X)[:, 1]
+
+
+def capacity_cutoffs(reference, shares):
+    """The score above which each share of the reference encounters is flagged.
+
+    Args:
+        reference (array-like): Scores on rows the model was not fitted on. Pass the
+            RAW scores (`return_raw=True` of the two calibration functions): on
+            isotonic risks, ties make the flagged share larger than intended.
         shares (dict): Tier name -> share of the encounters the hospital can follow
             up, such as {"High": 0.10}.
 
     Returns:
-        dict: Tier name -> cut-off. An encounter is in the tier if its risk is at
+        dict: Tier name -> cut-off. An encounter is in the tier if its score is at
         least the cut-off.
     """
     return {
@@ -98,13 +137,15 @@ def capacity_cutoffs(reference, shares):
     }
 
 
-def tier_report(y, p, cutoffs):
+def tier_report(y, p, cutoffs, score=None):
     """What each cut-off does on a set of encounters, plus a row for all of them.
 
     Args:
         y (array-like): True labels, 0 or 1.
         p (numpy.ndarray): Calibrated predicted risks.
         cutoffs (dict): Tier name -> cut-off, from `capacity_cutoffs`.
+        score (numpy.ndarray, optional): The scores the cut-offs were taken on (the
+            raw scores); if omitted, the cut-offs are compared with `p`.
 
     Returns:
         pandas.DataFrame: One row per tier: the cut-off, the share of encounters
@@ -112,10 +153,11 @@ def tier_report(y, p, cutoffs):
         them (precision), their mean predicted risk (equal to the observed rate if the
         risks are calibrated) and the share of all readmissions they catch (recall).
     """
-    y = np.asarray(y)
+    y, p = np.asarray(y), np.asarray(p)
+    score = p if score is None else np.asarray(score)
     rows = {}
     for name, cutoff in ({"All encounters": -np.inf} | cutoffs).items():
-        flagged = p >= cutoff
+        flagged = score >= cutoff
         rows[name] = {
             "cutoff": cutoff,
             "share_flagged": flagged.mean(),

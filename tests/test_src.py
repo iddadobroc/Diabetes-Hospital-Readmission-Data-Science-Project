@@ -22,6 +22,7 @@ from calibration import (  # noqa: E402
     capacity_cutoffs,
     holdout_calibration,
     out_of_fold_calibration,
+    raw_scores,
     tier_report,
 )
 from evaluation import cv_summary, leaderboard, rate_by, scores  # noqa: E402
@@ -32,8 +33,10 @@ from features import (  # noqa: E402
     REFERENCE,
     TARGET,
     clean,
+    fingerprint,
     first_encounter_only,
     icd9_group,
+    prepare_features,
     split_by_patient,
 )
 from models import (  # noqa: E402
@@ -135,6 +138,25 @@ class TestClean(unittest.TestCase):
         out = clean(self.raw, hospice="flag")
         self.assertEqual(list(out["encounter_id"]), [1, 3, 5, 6])
         self.assertEqual(list(out["hospice"]), [0, 1, 0, 0])
+
+    def test_prepare_features_scores_new_rows(self):
+        """The derived features need no target and remove no row (expired kept)."""
+        rows = self.raw.drop(columns=["readmitted"])
+        out = prepare_features(rows)
+        self.assertEqual(len(out), len(rows))
+        self.assertNotIn(TARGET, out.columns)
+        self.assertTrue(set(FEATURES) <= set(out.columns))
+        cleaned = clean(self.raw)
+        same = out[out["encounter_id"].isin(cleaned["encounter_id"])]
+        pd.testing.assert_frame_equal(
+            same[FEATURES].reset_index(drop=True), cleaned[FEATURES]
+        )
+
+    def test_fingerprint_ignores_row_order(self):
+        """The split fingerprint depends on which encounters, not on their order."""
+        out = clean(self.raw)
+        self.assertEqual(fingerprint(out), fingerprint(out.iloc[::-1]))
+        self.assertNotEqual(fingerprint(out), fingerprint(out.iloc[1:]))
 
     def test_step_log(self):
         """The log follows rows and <30 rate step by step, and changes nothing."""
@@ -415,6 +437,43 @@ class TestCalibration(unittest.TestCase):
         self.assertEqual(report.loc["High", "observed_rate"], 1.0)
         self.assertEqual(report.loc["High", "recall"], 1.0)
         self.assertEqual(report.loc["All encounters", "share_flagged"], 1.0)
+
+    def test_cutoffs_on_raw_scores_with_tied_risks(self):
+        """Isotonic risks have ties; cut-offs on the raw score still flag 10%.
+
+        Risks rounded to one decimal stand in for an isotonic step function: the top
+        tenth of the encounters shares its risk with many others, so a cut-off on the
+        risk flags too many. On the raw score (same order, no ties) it flags 10%.
+        """
+        raw = np.linspace(0, 1, 1000, endpoint=False)
+        risk = np.floor(raw * 4) / 4  # four steps: 250 encounters per value
+        y = (raw >= 0.9).astype(int)
+        on_risk = tier_report(y, risk, capacity_cutoffs(risk, {"High": 0.10}))
+        self.assertGreater(on_risk.loc["High", "share_flagged"], 0.2)
+        cutoffs = capacity_cutoffs(raw, {"High": 0.10})
+        on_raw = tier_report(y, risk, cutoffs, score=raw)
+        self.assertAlmostEqual(on_raw.loc["High", "share_flagged"], 0.10)
+        self.assertEqual(on_raw.loc["High", "recall"], 1.0)
+
+    def test_raw_scores_keep_the_order_of_the_risks(self):
+        """Both options return raw scores that rank like the calibrated risks."""
+        from scipy.stats import spearmanr
+        from sklearn.model_selection import StratifiedGroupKFold
+
+        pipe = self.pipelines()[1]
+        cv = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=0)
+        model, reference, raw = out_of_fold_calibration(
+            pipe, self.X, self.y, self.groups, cv, return_raw=True
+        )
+        self.assertEqual(len(raw), len(reference))
+        p = model.predict_proba(self.X)[:, 1]
+        score = raw_scores(model, self.X)
+        self.assertGreaterEqual(spearmanr(p, score).statistic, 0.95)
+        fit, cal = slice(0, 2000), slice(2000, 3000)
+        model, reference, raw = holdout_calibration(
+            pipe, self.X[fit], self.y[fit], self.X[cal], self.y[cal], return_raw=True
+        )
+        np.testing.assert_allclose(raw, raw_scores(model, self.X[cal]))
 
 
 if __name__ == "__main__":

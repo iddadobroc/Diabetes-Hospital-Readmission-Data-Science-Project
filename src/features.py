@@ -10,6 +10,9 @@ dataset BEFORE the split. Anything that learns from the data (rare levels, scali
 encoding) belongs to the model pipeline and is fitted on the training rows only.
 """
 
+import hashlib
+
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 
@@ -250,6 +253,73 @@ def icd9_group(code):
     return "Other"
 
 
+def prepare_features(
+    df, rare_meds="drop", specialty="raw", weight_flag=False, record=None
+):
+    """Derive the model features from raw encounter rows, one row at a time.
+
+    Steps 3 to 7 of `clean`: no row is removed and no target is needed, so the same
+    function prepares the training data (inside `clean`) and the new discharges
+    scored by the app or by `train.py`. Nothing is learned from the data.
+
+    Args:
+        df (pandas.DataFrame): Raw encounters with the `*_desc` columns, as returned by
+            `add_mapping_descriptions(load_raw(...), load_mappings())`.
+        rare_meds (str): "group" also adds `other_meds` (see `clean`).
+        specialty (str): "clinical" maps `medical_specialty` to clinical areas.
+        weight_flag (bool): True adds a 0/1 `weight_recorded` column.
+        record (callable, optional): Called as `record(step, frame)` after each step,
+            used by `clean` to log the cleaning.
+
+    Returns:
+        pandas.DataFrame: A copy of `df` with the derived feature columns added and
+        the categorical columns stored as strings.
+    """
+    df = df.copy()
+
+    def done(step):
+        if record is not None:
+            record(step, df)
+
+    # 3. Age band -> its position, 0 to 9: "[70-80)" -> 7 (an order, not an age)
+    df["age_band_order"] = df["age"].str[1:].str.split("-").str[0].astype(int) // 10
+    done("3. age_band_order")
+
+    # 4. Missing values as an explicit level (D-008)
+    for col in ["race", "payer_code", "medical_specialty"]:
+        df[col] = df[col].fillna("Unknown")
+    if specialty == "clinical":
+        df["medical_specialty"] = (
+            df["medical_specialty"].map(SPECIALTY_TO_GROUP).fillna("Other")
+        )
+    if weight_flag:
+        df["weight_recorded"] = df["weight"].notna().astype(int)
+    if rare_meds == "group":
+        any_rare = (df[RARE_MEDICATIONS] != "No").any(axis=1)
+        df["other_meds"] = any_rare.map({True: "Yes", False: "No"})
+    done("4. Explicit Unknown levels (D-008)")
+
+    # 5. Diagnoses -> clinical groups (map on the unique codes, much faster)
+    for col in ["diag_1", "diag_2", "diag_3"]:
+        groups = {code: icd9_group(code) for code in df[col].unique()}
+        df[f"{col}_group"] = df[col].map(groups)
+    done("5. Diagnosis groups diag_1/2/3_group")
+
+    # 6. Medication summaries, computed on ALL drugs before dropping the rare ones
+    df["n_meds_active"] = (df[MEDICATIONS] != "No").sum(axis=1)
+    df["n_meds_changed"] = df[MEDICATIONS].isin(["Up", "Down"]).sum(axis=1)
+    done("6. Medication counts n_meds_active, n_meds_changed")
+
+    # 7. Total use of the hospital in the previous year
+    df["n_visits_last_year"] = df[
+        ["number_outpatient", "number_emergency", "number_inpatient"]
+    ].sum(axis=1)
+    done("7. n_visits_last_year")
+    for col in df.select_dtypes("category").columns:
+        df[col] = df[col].astype(str)
+    return df
+
+
 def clean(
     df, hospice="drop", rare_meds="drop", specialty="raw", weight_flag=False, log=None
 ):
@@ -281,19 +351,20 @@ def clean(
     """
     df = df.copy()
 
-    def record(step):
-        """Append the shape and the `<30` rate of `df` after `step` to `log`."""
+    def record(step, frame=None):
+        """Append the shape and the `<30` rate of `frame` (default `df`) to `log`."""
         if log is None:
             return
-        if "readmitted" in df.columns:
-            rate = (df["readmitted"] == "<30").mean()
+        frame = df if frame is None else frame
+        if "readmitted" in frame.columns:
+            rate = (frame["readmitted"] == "<30").mean()
         else:
-            rate = df[TARGET].mean()
+            rate = frame[TARGET].mean()
         log.append(
             {
                 "step": step,
-                "rows": len(df),
-                "columns": df.shape[1],
+                "rows": len(frame),
+                "columns": frame.shape[1],
                 "readmitted_30_rate": rate,
             }
         )
@@ -315,40 +386,14 @@ def clean(
     df[TARGET] = (df["readmitted"] == "<30").astype(int)
     record("2. Binary target readmitted_30 (D-011)")
 
-    # 3. Age band -> its position, 0 to 9: "[70-80)" -> 7 (an order, not an age)
-    df["age_band_order"] = df["age"].str[1:].str.split("-").str[0].astype(int) // 10
-    record("3. age_band_order")
-
-    # 4. Missing values as an explicit level (D-008)
-    for col in ["race", "payer_code", "medical_specialty"]:
-        df[col] = df[col].fillna("Unknown")
-    if specialty == "clinical":
-        df["medical_specialty"] = (
-            df["medical_specialty"].map(SPECIALTY_TO_GROUP).fillna("Other")
-        )
-    if weight_flag:
-        df["weight_recorded"] = df["weight"].notna().astype(int)
-    if rare_meds == "group":
-        any_rare = (df[RARE_MEDICATIONS] != "No").any(axis=1)
-        df["other_meds"] = any_rare.map({True: "Yes", False: "No"})
-    record("4. Explicit Unknown levels (D-008)")
-
-    # 5. Diagnoses -> clinical groups (map on the unique codes, much faster)
-    for col in ["diag_1", "diag_2", "diag_3"]:
-        groups = {code: icd9_group(code) for code in df[col].unique()}
-        df[f"{col}_group"] = df[col].map(groups)
-    record("5. Diagnosis groups diag_1/2/3_group")
-
-    # 6. Medication summaries, computed on ALL drugs before dropping the rare ones
-    df["n_meds_active"] = (df[MEDICATIONS] != "No").sum(axis=1)
-    df["n_meds_changed"] = df[MEDICATIONS].isin(["Up", "Down"]).sum(axis=1)
-    record("6. Medication counts n_meds_active, n_meds_changed")
-
-    # 7. Total use of the hospital in the previous year
-    df["n_visits_last_year"] = df[
-        ["number_outpatient", "number_emergency", "number_inpatient"]
-    ].sum(axis=1)
-    record("7. n_visits_last_year")
+    # 3.-7. The derived features, the same rules used to score new encounters
+    df = prepare_features(
+        df,
+        rare_meds=rare_meds,
+        specialty=specialty,
+        weight_flag=weight_flag,
+        record=record,
+    )
 
     # 8. Drop what is neither a feature nor a reference column (D-006, D-007)
     df = df.drop(columns=CONSTANT + RARE_MEDICATIONS)
@@ -411,3 +456,26 @@ def split_by_patient(df, seed, test_size=0.20, val_size=0.25):
     assert not patients[0] & patients[2], "a patient is in train and test"
     assert not patients[1] & patients[2], "a patient is in validation and test"
     return train, val, test
+
+
+# Fingerprints of the frozen split (seed 42, default cleaning): two computers, or the
+# CI runner, have the same three sets if and only if they print the same values.
+SPLIT_SEED = 42
+SPLIT_FINGERPRINTS = {
+    "train": "1e2fece0c48e",
+    "validation": "920e3a74bf6e",
+    "test": "fe3f135ba61d",
+}
+
+
+def fingerprint(part):
+    """The first 12 hex digits of the SHA-256 of the sorted encounter ids.
+
+    Args:
+        part (pandas.DataFrame): A table with `encounter_id`.
+
+    Returns:
+        str: The fingerprint, to compare with `SPLIT_FINGERPRINTS`.
+    """
+    ids = np.sort(part["encounter_id"].to_numpy()).astype("int64")
+    return hashlib.sha256(ids.tobytes()).hexdigest()[:12]
