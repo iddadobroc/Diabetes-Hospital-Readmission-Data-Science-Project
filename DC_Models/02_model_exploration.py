@@ -36,9 +36,9 @@
 # | 3 | Preprocessing as pipelines | ✅ |
 # | 4 | Grouped cross-validation, results log, two baselines | ✅ |
 # | 5 | Model families: linear, EBM, bagging, boosting (sklearn, XGBoost, LightGBM, CatBoost), AFT, Keras, ensemble | ✅ |
-# | 6 | Calibration (two options, rehearsed on validation) and capacity tiers | ✅ |
-# | 6 | Decision curve, SHAP, fairness | 🔲 |
-# | 7 | The test set, once, for both calibration options | 🔲 locked |
+# | 6 | Calibration (two options, rehearsed on validation) and capacity tiers | moved to `03_final_model` |
+# | 6 | SHAP and fairness (decision curve still open, D-022) | moved to `03_final_model` |
+# | 7 | The test set, once | done in `03_final_model`, one option declared first (D-032); locked here |
 
 # %% [markdown]
 # ## The leakage rules of this notebook
@@ -1031,7 +1031,7 @@ for side in ["top", "right"]:
 plt.show()
 
 # %% [markdown]
-# **What the rehearsal says.** RESULTS_PLACEHOLDER
+# **What the rehearsal says.** Not run in this notebook: the rehearsal, the declaration of the calibration option and the single test evaluation were done in `03_final_model` (decision log D-032; option B, test PR-AUC 0.239). Stages 6 and 7 below are kept as written and stay locked.
 
 # %% [markdown]
 # **Still to do** (same rule: validation or out-of-fold predictions only):
