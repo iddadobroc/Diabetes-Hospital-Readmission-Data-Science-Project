@@ -1,0 +1,11 @@
+# Gradio itself is installed by the Space from sdk_version (README.md).
+# The model libraries are pinned to the versions that trained model.joblib, so that the
+# pickled pipeline loads (same rule as the course pipeline, W10).
+pandas==2.3.3
+numpy==2.3.5
+scipy==1.16.3
+scikit-learn==1.9.1
+xgboost==3.4.1
+joblib==1.6.0
+matplotlib==3.10.0
+huggingface_hub

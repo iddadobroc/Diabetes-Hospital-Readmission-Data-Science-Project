@@ -185,6 +185,7 @@ def bars_h(
     color=AC,
     xmax=None,
     width=0.66,
+    texts=None,
 ):
     """Horizontal bars for structure categories (models, groups, features).
 
@@ -203,6 +204,8 @@ def bars_h(
         hatch (list[bool], optional): Bars that are estimates (FC), drawn hatched.
         color (str): Fill of the bars.
         xmax (float, optional): Right end of the scale.
+        texts (list[str], optional): Labels to write instead of the formatted values
+            (e.g. "over 60%" for a value shown capped).
         width (float): Bar thickness as a share of the category (2/3 for absolute
             measures, 1/3 for ratios).
     """
@@ -223,7 +226,7 @@ def bars_h(
         ax.text(
             value if value >= 0 else 0,
             y[i],
-            " " + fmt_number(value, decimals, unit),
+            " " + (texts[i] if texts else fmt_number(value, decimals, unit)),
             va="center",
             ha="left",
             fontsize=9.5,

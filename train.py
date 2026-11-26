@@ -11,7 +11,7 @@ need into `models/`:
 | `model.joblib` | the calibrated pipeline (preprocessing + XGBoost + isotonic calibrator) |
 | `metrics.json` | test metrics, baselines, tiers, the values checked by the gate |
 | `config.json` | what the app needs: features, input choices, typical values, ID mappings, cut-offs |
-| `sample_discharges.csv` | 300 test discharges in the raw UCI format, for the worklist demo |
+| `sample_discharges.csv` | 2,000 test discharges in the raw UCI format, for the worklist demo |
 
 Every number must equal `reports/final_test_metrics.json`, written by
 `DC_Models/03_final_model` when the test set was opened (checked in the tests).
@@ -71,7 +71,7 @@ from preprocessing import make_pipeline  # noqa: E402
 
 OUT = ROOT / "models"
 VERSION = os.environ.get("MODEL_VERSION", "dev")
-SAMPLE_SIZE = 300
+SAMPLE_SIZE = 2000
 
 
 def typical_values(raw_rows):

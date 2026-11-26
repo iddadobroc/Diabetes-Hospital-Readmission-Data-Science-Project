@@ -8,6 +8,7 @@ check a rule that protects against leakage, or a bug found while building the
 notebooks (a model that cannot be cloned, a model whose training diverges).
 """
 
+import importlib.util
 import sys
 import unittest
 from pathlib import Path
@@ -342,6 +343,9 @@ class TestModelWrappers(unittest.TestCase):
         p = model.fit(X, y).predict_proba(X)[:, 1]
         self.assertGreater(scores(y, p)["roc_auc"], 0.7)
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("catboost"), "catboost not installed (pipeline CI)"
+    )
     def test_catboost_reads_text_columns(self):
         """CatBoostNativeClassifier finds the categorical columns by itself."""
         X = pd.DataFrame({"x": np.arange(40.0), "colour": ["red", "blue"] * 20})
