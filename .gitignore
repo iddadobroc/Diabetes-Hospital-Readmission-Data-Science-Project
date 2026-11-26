@@ -15,3 +15,9 @@ reports/*.html
 
 !reports/.gitkeep
 .DS_Store
+
+# Course material (slides, labs, datasets, tokens): local reference only, never published
+Enterprise Data Science Bootcamp(slides and labs from the professor classes)/
+
+# Editor settings
+.vscode/

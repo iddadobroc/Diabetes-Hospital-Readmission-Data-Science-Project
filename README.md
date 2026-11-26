@@ -1,5 +1,4 @@
 # Diabetes Hospital Readmission — Data Science Project
-try to contribute
 ## Project structure
 
 - `notebooks/`: the shared analysis: `01_eda_raw.ipynb` (first look at the raw data), `02_data_cleaning.ipynb` (the cleaning step by step and the frozen split), `03_eda_target.ipynb` (the `<30` rate on the training rows).
