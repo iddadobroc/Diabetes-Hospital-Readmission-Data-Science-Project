@@ -54,6 +54,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-030 | Audit against scikit-learn's "Common pitfalls and recommended practices" | Accepted |
 | D-031 | The shared test set was scored once by the LA stream (2026-10-14) | Accepted |
 | D-032 | Final recipe, calibration rule and quality gate, fixed before the test is opened | Accepted |
+| D-033 | Deployment: GitHub Actions, Hugging Face model repository and Gradio Space | Accepted |
 
 ---
 
@@ -244,6 +245,14 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
   - Tiers (cut-offs from the out-of-fold reference): High 9.8% of encounters, observed rate 28.8% (mean risk 28.3%), 25.3% of the readmissions; High + Medium 30.4%, 19.4%, 52.6%.
   - **Quality gate: passed on all four lines** (PR-AUC 0.239 ≥ 0.20; +0.099 over LACE ≥ 0.01; High-tier recall 0.253 ≥ 0.20; calibration gap 0.35 pp ≤ 1 pp).
   - The test PR-AUC (0.239) is above validation (0.228) and above the LA score on the same patients (0.232, D-031): the 5-seed spread (± 0.001) is smaller than this gap, so it reflects these patients, not the model; the honest summary is "about 0.23".
+
+## D-033 — Deployment: GitHub Actions, Hugging Face model repository and Gradio Space
+- **Date:** 2026-11-26 · **Status:** Accepted · **Implemented in:** `.github/workflows/ml-pipeline.yml`, `train.py`, `check_quality.py`, `scripts/fetch_data.py`, `space/`, `docs/model_card.md`
+- **Decision:** Follow the pipeline of the course (W8-W10) instead of the FastAPI + Streamlit + Docker stack of the project plan: on every push, data tests, `train.py`, model tests and the quality gate (D-032); on a `v*` tag, a GitHub release, the model on the Hugging Face Hub with the same tag, and the Gradio Space updated to load exactly that tag ("one tag, one version everywhere"). The dashboard of the plan is a tab of the Space (Evidence); the patient track of the plan (LLM guidance) is left out (team decision, 2026-11-26).
+- **Data in the pipeline:** the CSV files stay out of the public repository; `scripts/fetch_data.py` downloads the UCI zip and checks the SHA-256 of both files against the copies used for every number (identical on 2026-11-26). `tests/test_data.py` also asserts the split fingerprints, and `tests/test_model.py` that `train.py` reproduces the test metrics of `03_final_model` to six decimals.
+- **Serialization:** `joblib`, as in the course labs; the pipeline holds only scikit-learn and XGBoost objects, and the shared code the app needs (`features.py`, `data_prep.py`, `scoring.py`, `ibcs.py`) is copied next to `app.py` by the workflow. Library versions are pinned in `requirements-pipeline.txt` and `space/requirements.txt` to those that trained the model. Checked: the model trained under Python 3.13 loads and scores identically in Python 3.12 (the Space runtime of the course), with Gradio 6.32.0, and the app answers through `gradio_client`.
+- **Display rule:** risks above 60% are shown as "over 60%". On test, 39 patients are above 60% (64% readmitted) and the last isotonic step gives 100% to 3 patients, of whom 1 was readmitted: a near-certainty the data cannot support.
+- **Alternatives considered:** skops instead of joblib (safer loading, W5): possible, not needed while the model is loaded only from the team's own repository. ZeroGPU hardware (course lab): not needed for a tree model; CPU basic avoids its quota and account rules.
 
 ## Research directions
 

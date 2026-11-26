@@ -1,154 +1,153 @@
-# Diabetes Hospital Readmission — Data Science Project
-## Project structure
+# Diabetes Hospital Readmission — which patients to follow up first
 
-- `notebooks/`: the shared analysis: `01_eda_raw.ipynb` (first look at the raw data), `02_data_cleaning.ipynb` (the cleaning step by step and the frozen split), `03_eda_target.ipynb` (the `<30` rate on the training rows).
-- `LA_Models/`, `DC_Models/`: modelling notebooks of two independent work streams, compared at the end.
-- In `DC_Models/` and for `notebooks/02_*` and `03_*`, each `.ipynb` has a `.py` copy in Jupytext "percent" format (code and text only, no outputs).
-- `src/`: shared Python code, imported by the notebooks:
-  - `data_prep.py`: loading the raw data correctly;
-  - `features.py`: the deterministic cleaning (`clean`, with the decision-log proposals as defaults and the alternatives as options), the feature lists and the patient-grouped split;
-  - `preprocessing.py`: the preprocessing of each model family, as scikit-learn transformers fitted inside the model pipeline;
-  - `models.py`: scikit-learn wrappers for XGBoost AFT, CatBoost and Keras, and `with_seed` to refit any model with another seed;
-  - `evaluation.py`: the metrics, the readable result tables and `rate_by` (a rate by level, with an interval by patient);
-  - `calibration.py`: the two leakage-safe ways to calibrate the chosen model (holdout, grouped out of fold) and the capacity tiers.
-- `data/`: local datasets, excluded from Git.
-- `docs/`: reference documents for the project (project brief, project plan) and `decision_log.md`, the record of every methodological decision.
-- `reports/`: experiment logs (`experiments-readmission*.csv`, one row per model and dataset, committed) and `df_diabetes_report.html`, the clean profiling report of the raw data (committed; other HTML reports, such as `df_train_clean_report.html` built by `02_data_cleaning.ipynb`, stay local).
-- `requirements.txt`: Python dependencies; `SETUP.md`: how to install them on Windows and macOS.
-- `tests/`: unit tests of the code in `src/` (`python -m unittest`, from the project folder).
-- `CLAUDE.md`: project rules and verified data facts, read automatically by Claude Code.
+NOVA IMS, Enterprise Data Science Bootcamp 2026, group project.
+
+**Decision.** At discharge, the Director of Care Quality of a hospital network must decide
+which diabetic patients get extra follow-up, with capacity for only some of them.
+**Answer of the project.** A calibrated model ranks the discharges by their risk of an
+inpatient readmission within 30 days: following up the riskiest 10% reaches **568 of
+2,216 readmissions** on test patients the model never saw, **232 more than the LACE
+clinical score** and 346 more than choosing at random.
+
+| | Link |
+|---|---|
+| Live demo (Gradio Space) | `https://huggingface.co/spaces/<hf-user>/diabetes-readmission-app` (published by the pipeline, see [Deployment](#deployment)) |
+| Model repository and card | `https://huggingface.co/<hf-user>/diabetes-readmission-model` · [docs/model_card.md](docs/model_card.md) |
+| Every methodological decision | [docs/decision_log.md](docs/decision_log.md) (D-001 to D-032) |
+| Course brief and project plan | [docs/](docs/) |
+
+## Results
+
+Measured **once** on the test patients (19,802 discharges of 13,998 patients, 20% of the
+patients, held out from every fit and choice; decision log D-032):
+
+| Ranking method | PR-AUC | ROC-AUC | Readmissions reached with 10% capacity |
+|---|---:|---:|---:|
+| **XGBoost, calibrated (final)** | **0.239** | **0.675** | **568** |
+| Logistic regression | 0.218 | 0.667 | 523 |
+| LACE index (clinical score) | 0.140 | 0.571 | 336 |
+| Random order | 0.112 | 0.500 | 222 |
+
+- **Calibrated:** mean estimated risk 11.5% against 11.2% observed; every risk decile within 1.3 pp.
+- **Tiers by capacity:** High = riskiest 10% of discharges (28.8% of them are readmitted, 25% of all readmissions); High + Medium = 30% of discharges, 53% of readmissions.
+- **Quality gate** fixed before the test was opened: passed on all four lines.
+- **Fairness:** calibration holds in every race, age and gender group with 500+ test discharges; the High tier reaches 21% (80 and over) to 32% (under 50) of each group's readmissions.
+- **Limits:** the model ranks risk, it does not prove that follow-up prevents readmissions; 1999-2008 US data; readmissions outside the network are recorded as "no". See the [model card](docs/model_card.md).
+
+The figures of the report and of the app are in [reports/figures/](reports/figures/), in the IBCS notation.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[UCI data<br/>fetched + SHA-256] --> B[clean, prepare_features<br/>src/features.py]
+    B --> C[patient-grouped split<br/>60/20/20, fingerprints]
+    C --> D[model selection<br/>DC_Models/02]
+    D --> E[final recipe, calibration,<br/>gate, one test<br/>DC_Models/03]
+    E --> F[train.py + tests +<br/>check_quality.py<br/>GitHub Actions]
+    F -->|tag v*| G[GitHub release]
+    F -->|tag v*| H[HF model repo<br/>same tag]
+    H --> I[Gradio Space<br/>loads that version]
+```
+
+1. **Data audit and cleaning** (`notebooks/`, `src/data_prep.py`, `src/features.py`): `?` is missing, `None` in the lab tests is "not measured" (D-001); death and hospice discharges removed because their outcome cannot be observed (D-004, D-005); diagnoses grouped as in Strack et al. (2014); every rule is a row-by-row function tested in `tests/`.
+2. **No leakage by patient**: 71,518 patients have 101,766 encounters, so every split and cross-validation is grouped on `patient_nbr` (D-010, D-017); everything learned from data sits inside a scikit-learn `Pipeline` (D-014).
+3. **Model selection** (`DC_Models/02_model_exploration`): linear models, EBM, random forests, four boosting libraries, a survival model (XGBoost AFT), a Keras network and an ensemble, tuned on grouped CV of the training rows and compared on validation (D-015, D-019).
+4. **Final model** (`DC_Models/03_final_model`): tuned XGBoost, isotonic calibration (option chosen on validation before the test), tiers by capacity, baselines, TreeSHAP explanations, fairness audit, then the test set once (D-032).
+5. **Pipeline** (`.github/workflows/ml-pipeline.yml`, course W9-W10): data tests, `train.py`, model tests, quality gate on every push; a `v*` tag publishes the release, the Hugging Face model and the Space.
+
+## Repository
+
+| Path | What |
+|---|---|
+| `src/` | Shared code imported by notebooks, `train.py` and the app: `data_prep.py` (loading), `features.py` (cleaning, derived features, split, fingerprints), `preprocessing.py` (pipelines), `models.py` (AFT, CatBoost, Keras wrappers), `evaluation.py` (metrics), `calibration.py` (calibration, capacity cut-offs), `final_model.py` (the final recipe, gate, LACE baseline), `scoring.py` (risk, tiers, reasons for new discharges), `ibcs.py` (IBCS charts) |
+| `notebooks/` | `01_eda_raw`, `02_data_cleaning` (step by step, frozen split), `03_eda_target` (target rates on training rows) |
+| `DC_Models/` | `01_cleaning_variants` (cleaning alternatives tested), `02_model_exploration` (model families), `03_final_model` (final model, single test evaluation, figures) |
+| `LA_Models/` | The first modelling stream (Luís); its test evaluation of 2026-10-14 is recorded in D-031 |
+| `train.py`, `check_quality.py`, `scripts/fetch_data.py` | The pipeline run by GitHub Actions |
+| `space/` | The Gradio app (`app.py`) and its Space configuration |
+| `tests/` | `test_src.py` (rules and leakage, no data needed), `test_data.py` (the raw file), `test_model.py` (the trained model) |
+| `docs/` | Decision log, model card, course brief, project plan |
+| `reports/` | Experiment logs (`experiments-readmission*.csv`), `final_test_metrics.json`, figures, the clean profiling report |
+
+The `.py` files next to the notebooks are their Jupytext copies (code and text, no
+outputs), for readable diffs.
 
 ## Setup
 
-Python 3.13, a virtual environment in `.venv/` and `pip install -r requirements.txt`, then the two data files in `data/`. The commands differ between Windows and macOS (macOS also needs `brew install libomp`, and TensorFlow has no wheel for Intel Macs): see **[SETUP.md](SETUP.md)** for the step-by-step guide of each system.
-
-## Running the EDA notebook
-
-1. Open `notebooks/01_eda_raw.ipynb` in VS Code.
-2. Select the kernel: **Select Kernel → Python Environments → `.venv` (Python 3.13)**. You can check it with the `print(sys.executable)` cell, which must point to `.venv`.
-3. Click **Run All**.
-4. To regenerate the profiling report, uncomment the `ProfileReport` cell and run it (it takes a few minutes). The report is saved to `reports/df_diabetes_report.html` and can be opened in a browser.
-
-The notebook imports the loading functions from `src/data_prep.py`, so it must be run from the project (it finds the project root automatically).
-
-The same way, then run `02_data_cleaning.ipynb` (about a minute; the first run also builds `reports/df_train_clean_report.html`, a few more minutes) and `03_eda_target.ipynb` (seconds).
-
-## Running the modelling notebooks (`DC_Models/`)
-
-Run them in this order, with the `.venv` kernel (**Restart Kernel → Run All**):
-
-| Notebook | What it does | Time |
-|---|---|---|
-| `01_cleaning_variants.ipynb` | Tests the cleaning proposals of the decision log against their alternatives, with patient-grouped folds | ~3 min |
-| `02_model_exploration.ipynb` | Compares the model families (linear, EBM, bagging, boosting, XGBoost AFT, Keras, ensemble) and writes `reports/experiments-readmission-dc.csv` | ~45 min |
-
-The test set is not used for model selection (it was scored once by the LA stream on 2026-10-14, before this rule was written: see D-031). In `02` it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`, and it cannot be opened before `PRIMARY` declares which calibration option (rehearsed on validation in Stage 6) is the main result. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
-
-After changing a notebook, regenerate its `.py` copy before committing:
+Python 3.13 and a virtual environment in `.venv/`; the full steps for Windows and
+macOS are in **[SETUP.md](SETUP.md)**.
 
 ```powershell
-jupytext --to py:percent --opt notebook_metadata_filter=-all --opt cell_metadata_filter=-all DC_Models/02_model_exploration.ipynb
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt       # everything: notebooks, all model families
+python scripts/fetch_data.py          # data/diabetic_data.csv and IDS_mapping.csv, checked by SHA-256
+python -m unittest                    # 38 tests (the data and model tests run when the files exist)
 ```
 
-## How we obtain a clean profiling report
+`requirements.txt` is the full development environment; `requirements-pipeline.txt`
+pins the few libraries of the pipeline to the versions that produced every number.
 
-A first version of the report, generated with a bare `pd.read_csv()`, contained several misleading alerts that came from the loading, not from the data. We fixed them as follows:
+## Reproduce the results
 
-1. **Correct missing values.** The dataset uses `"?"` as the missing-value marker, which pandas does not recognise by default, while pandas does turn the string `"None"` into NaN. In `max_glu_serum` and `A1Cresult`, however, `"None"` means "test not performed", which is an informative category and not a missing value. `load_raw()` therefore loads the data with `keep_default_na=False, na_values=["?"]`. As a result:
-   - `max_glu_serum` and `A1Cresult` are no longer reported as 95% / 83% missing;
-   - `weight` (96.9% missing), `payer_code`, `medical_specialty`, `race` and `diag_1/2/3` now show their real missing values instead of a `"?"` category.
-2. **ID columns as categories.** `admission_type_id`, `discharge_disposition_id` and `admission_source_id` are codes, not quantities, so they are cast to `category` instead of being profiled as numbers.
-3. **Lookup table decoded, not profiled.** `IDS_mapping.csv` is not a dataset: it contains 3 lookup tables stacked on top of each other, so profiling it has no analytical value. `load_mappings()` parses it into one dictionary per ID column, and `add_mapping_descriptions()` adds readable `*_desc` columns next to the original IDs. Descriptions without information (`NULL`, `Not Mapped`, `Not Available`, `Unknown/Invalid`) are merged into `Unknown`.
+| Step | Command | Time |
+|---|---|---|
+| Cleaning, step by step | open `notebooks/02_data_cleaning.ipynb`, Run All | ~1 min |
+| Model families | `DC_Models/02_model_exploration.ipynb`, Run All (lower `N_ITER` to go faster) | ~45 min |
+| Final model, figures | `DC_Models/03_final_model.ipynb`, Run All | ~3 min |
+| Published model | `python train.py` then `python check_quality.py` | ~1 min |
+| The app, locally | `pip install gradio==6.32.0` then `python space/app.py` → http://127.0.0.1:7860 | |
 
-### Alerts that remain in the clean report
+`train.py` must give the same test metrics as `03_final_model` (checked by
+`tests/test_model.py`). The split is identical on every computer: the fingerprints of
+the three sets are printed and asserted (train `1e2fece0c48e`, validation
+`920e3a74bf6e`, test `fe3f135ba61d`).
 
-The remaining alerts are real properties of the data, or expected side effects of the fixes above. They will be handled in the data cleaning step:
+After changing a notebook, regenerate its `.py` copy:
 
-| Alert | Interpretation |
-|---|---|
-| Constant: `examide`, `citoglipton` | Real: always "No" (shown as "False" because ydata treats them as booleans). To be dropped. |
-| Missing: `weight` (96.9%), `medical_specialty` (49.1%), `payer_code` (39.6%), `race` (2.2%), `diag_3` (1.4%) | Real missing values, now visible thanks to the correct loading. |
-| Imbalance: most medications, `max_glu_serum`, `A1Cresult`, `race`, ID columns | Real: many drugs are almost never prescribed, and the lab tests are mostly "None" (not performed). |
-| High correlation: `*_id` ↔ `*_desc` | Expected: the description is just a decoding of the ID. Only one of the two will be used as a feature. |
-| High correlation: `change` ↔ `diabetesMed` ↔ `insulin` | Structural: if `change == "Ch"` then `diabetesMed == "Yes"` in every row. |
-| High correlation: `encounter_id` ↔ `patient_nbr` | Both are identifiers assigned over time; neither is used as a feature. |
-| High correlation: rare drugs ↔ `weight` / `payer_code` / `race` / `max_glu_serum` | Statistical artefact: drugs such as `acetohexamide`, `glimepiride-pioglitazone`, `metformin-pioglitazone` (1 non-"No" row each), `metformin-rosiglitazone` (2) and `troglitazone` (3) make the association measures unstable. These drugs will be dropped or grouped. |
-| Skewed / Zeros: `number_emergency`, `number_outpatient`, `number_inpatient`, `num_procedures` | Normal for count variables (most patients have 0 previous visits). |
-| Unique: `encounter_id` | Expected: it is the row key. |
+```powershell
+python -m jupytext --to py:percent --opt notebook_metadata_filter=-all --opt cell_metadata_filter=-all DC_Models/03_final_model.ipynb
+```
+
+## Deployment
+
+The schema of the course (W10): **one tag, one version everywhere**. The GitHub
+release, the Hugging Face model tag and the version the Space loads are the same.
+
+One-time setup:
+
+1. On Hugging Face, create the Space `diabetes-readmission-app` by hand: SDK **Gradio**, template **Blank**, hardware **CPU basic** (free; the model needs no GPU).
+2. Create a Hugging Face token with **Write** access and store it in GitHub: *Settings → Secrets and variables → Actions → New repository secret*, name `HF_TOKEN`.
+
+Release:
+
+```powershell
+git tag v1.0
+git push origin v1.0
+```
+
+The workflow then tests, trains, checks the gate, creates the GitHub release, uploads
+the model and its card to `<hf-user>/diabetes-readmission-model` with tag `v1.0`, and
+uploads `space/` (with the shared modules of `src/` and the figures) to the Space. A tag
+cannot be reused: after a failure, fix and push `v1.1`.
+
+## Responsible use
+
+- **Of the model:** an educational prototype, not a medical device. It ranks risk for
+  follow-up with a clinician reviewing every list; it must not be used to deny care or
+  decide without review (model card: intended and excluded uses).
+- **Of AI assistants in this project:** Claude Code (Anthropic) helped write and review
+  code, documentation and checks. Every number in the report, the slides and the app was
+  produced by the code of this repository and checked against its output files
+  (`reports/final_test_metrics.json`, `models/metrics.json`); every methodological
+  choice is recorded with its evidence in the decision log, and the team reviewed and
+  is accountable for all of it.
 
 ## Next steps
 
-The goal of the next steps is to close **Phase 1** of the project plan: a clean, patient-split, frozen dataset with every decision documented. Each step ends with a verifiable output. Decisions are recorded in [`docs/decision_log.md`](docs/decision_log.md) and referenced in the code by their ID (e.g. `# see D-004`).
-
-### Step 0 — Quick fixes
-
-- [x] `load_mappings()`: parse `IDS_mapping.csv` with `csv.reader` instead of `str.partition(",")`. Descriptions 19, 20 and 21 are quoted and contain a comma, so they kept their quotes (e.g. `'"Expired at home. Medicaid only, hospice."'`).
-- [x] `.gitignore`: add `data/processed/`.
-
-**Output:** one housekeeping commit.
-
-### Step 1 — Team decisions
-
-These decisions change the number of rows, so they must be agreed before writing the cleaning code. Proposals are drafted in the decision log with status *Proposed* or *Open*.
-
-| Decision | Proposal | Alternative | Log entry |
-|---|---|---|---|
-| Expired encounters (IDs 11, 19, 20) | Remove (1,652 rows) | None: the outcome is not observable | D-004 |
-| Hospice encounters (IDs 13, 14) | Remove (771 rows), as in Strack et al. and the project plan | Keep them with a `hospice` flag | D-005 |
-| Rare medications | Drop drugs with fewer than 100 non-"No" rows (10 drugs) | Group them into `other_meds` | D-007 |
-| Train/test split | All encounters + grouped split on `patient_nbr` | First encounter per patient only (Strack et al.) | D-010 |
-| `medical_specialty` | Top-N levels (~10) + "Other", fitted inside the model pipeline | Manual grouping by clinical area | D-009 |
-
-**Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb` tests every alternative against the proposals with the same patient-grouped folds and two models. Every proposal holds; only D-010 makes a real difference (training on the first encounter only costs 0.011 PR-AUC). The numbers are in each decision log entry.
-
-**Output:** decision log entries updated from *Proposed* / *Open* to *Accepted* (pending team agreement).
-
-### Step 2 — Deterministic cleaning in `src/`
-
-A `clean()` function applies only row-wise, rule-based transformations that do not learn anything from the data, so it can safely run before the split. Anything that is fitted on the data (top-N categories, encoding, scaling, imputation) belongs to the model pipeline and is fitted on the training set only.
-
-Implemented in `clean()` (`src/features.py`), with the proposals as defaults and the Step 1 alternatives as options.
-
-- [x] Filter rows according to the decisions in Step 1.
-- [x] Create the target `readmitted_30 = (readmitted == "<30")`; keep the raw `readmitted` column out of the features.
-- [x] Drop `examide`, `citoglipton`, `weight` and the rare medications.
-- [x] Make missing values explicit: `race`, `payer_code`, `medical_specialty` -> `"Unknown"`; `diag_1/2/3` -> `"Missing"` (in the `diag_*_group` columns; the raw codes are reference columns, never features).
-- [x] Group the diagnoses into the Strack et al. ICD-9 categories (`diag_1/2/3_group`), handling `250.xx` and V/E codes before any numeric conversion, and keep the raw strings.
-- [x] Add medication summary features: `n_meds_active` (drugs not "No") and `n_meds_changed` (drugs "Up" or "Down"); keep `insulin` as its own feature.
-- [x] Encode `age` by its order: `age_band_order` (0 for `[0-10)` to 9 for `[90-100)`), an integer that keeps the order of the bands without turning them into ages.
-- [x] End with sanity checks (`assert`): expected number of rows, no missing target, expected columns (in the notebooks), plus unit tests in `tests/test_src.py` (`python -m unittest`).
-- [x] A `02_data_cleaning.ipynb` notebook showing, for each step, rows, columns and `<30` rate before and after (`clean(..., log=[])` records them).
-
-**Output:** a tested `clean()` function and the step-by-step cleaning notebook (`notebooks/02_data_cleaning.ipynb`).
-
-### Step 3 — Split and freeze the dataset
-
-- [x] Create the test holdout with the strategy chosen in D-010: `split_by_patient()` (`src/features.py`), two `GroupShuffleSplit` cuts on `patient_nbr`, 60/20/20 train/validation/test, `random_state=42`.
-- [x] Check that no `patient_nbr` appears in two sets (`assert` in the function and a unit test) and that the `<30` rate is similar in all three (0.114 / 0.114 / 0.112).
-- [x] ~~Save `data/processed/train.parquet` and `data/processed/test.parquet` (local only).~~ Replaced by fingerprints: `data/` is not in Git, so each member would rebuild the files anyway, while `clean()` + `split_by_patient()` rebuild the same three sets in seconds. `02_data_cleaning.ipynb` prints a hash of each set's `encounter_id` to check that two computers have the same data (train `1e2fece0c48e`, validation `920e3a74bf6e`, test `fe3f135ba61d`).
-- [x] Regenerate the profiling report on the clean dataset: on the **training rows** only (`reports/df_train_clean_report.html`, local), because the report shows the correlations of the target.
-
-**Output:** the frozen modelling dataset. This closes Phase 1; from here the other work streams can start in parallel.
-
-### Step 4 — Target-oriented EDA (training set only)
-
-- [x] `<30` rate by `number_inpatient`, `discharge_disposition_desc`, `admission_source_desc`, `age`, `A1Cresult`, `diag_1_group`, `medical_specialty`, `n_meds_changed`, `insulin`, with 95% intervals by patient.
-- [x] Distributions by `race`, `gender` and `age`, as a baseline for the fairness audit (Phase 5).
-- [x] A short list of insights for the report and for feature selection.
-
-**Output:** `notebooks/03_eda_target.ipynb`.
-
-### Step 5 — Prepare Phase 2 (model)
-
-- [x] `ColumnTransformer` + `Pipeline` with encoding, top-N categories and scaling (`src/preprocessing.py`). `log1p` on the count variables is not applied yet: to be tested on validation.
-- [x] Baseline logistic regression with `class_weight="balanced"`, evaluated with grouped cross-validation on `patient_nbr` (`DC_Models/02_model_exploration.ipynb`).
-- [x] Fix the evaluation metrics: PR-AUC, ROC-AUC, recall and precision at top-K (`src/evaluation.py`).
-
-### Step 6 — Phase 2 (model), in progress
-
-- [x] Compare the model families with patient-grouped tuning and a fold-by-fold check (`DC_Models/02_model_exploration.ipynb`, Stage 5): tuned XGBoost is the best single model (cross-validated PR-AUC 0.228), a soft-voting ensemble the best overall (0.230). See D-019 in the decision log.
-- [ ] Calibrate the chosen model on validation, build the capacity-based risk tiers and the decision curve (Stage 6).
-- [ ] SHAP explanations and the fairness baseline by `race`, `age` and `gender` (Stage 6).
-- [ ] Open the test set once (Stage 7).
-
-The research directions beyond the project plan (statistical comparison of models, ranking objectives, comorbidity indices, conformal prediction…) are listed in the decision log, D-020 to D-029.
+From the open entries of the decision log: statistical comparison of models with
+patient-level bootstrap (D-020), nested grouped CV (D-021), decision curve analysis
+(D-022), ranking objectives tuned on the capacity (D-023), comorbidity features
+(D-024), the three-level outcome (D-025), conformal risk intervals (D-027), fairness
+by intersections of groups (D-028), and monitoring the calibration on new discharges.

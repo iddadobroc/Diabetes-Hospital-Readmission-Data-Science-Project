@@ -55,7 +55,7 @@ Checked on 2026-10-19: every package of `requirements.txt` has a ready-made whee
 
 ## Data (all systems)
 
-Copy `diabetic_data.csv` and `IDS_mapping.csv` into the `data/` folder. These files must remain available locally only (they are gitignored).
+Run `python scripts/fetch_data.py`: it downloads the UCI dataset into `data/` and checks the SHA-256 of `diabetic_data.csv` and `IDS_mapping.csv` against the files every number of the project was computed on. Copying the two files by hand into `data/` works too. These files must remain available locally only (they are gitignored).
 
 ## Check (all systems)
 
