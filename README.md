@@ -42,7 +42,7 @@ Run them in this order, with the `.venv` kernel (**Restart Kernel → Run All**)
 | `01_cleaning_variants.ipynb` | Tests the cleaning proposals of the decision log against their alternatives, with patient-grouped folds | ~3 min |
 | `02_model_exploration.ipynb` | Compares the model families (linear, EBM, bagging, boosting, XGBoost AFT, Keras, ensemble) and writes `reports/experiments-readmission-dc.csv` | ~45 min |
 
-The test set is never opened during model selection: it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`, and it cannot be opened before `PRIMARY` declares which calibration option (rehearsed on validation in Stage 6) is the main result. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
+The test set is not used for model selection (it was scored once by the LA stream on 2026-10-14, before this rule was written: see D-031). In `02` it is locked behind `OPEN_TEST = False` in Stage 7 of `02_model_exploration.ipynb`, and it cannot be opened before `PRIMARY` declares which calibration option (rehearsed on validation in Stage 6) is the main result. To make `02` faster, lower the values of `N_ITER` at the start of Stage 5 (0 skips the hyperparameter searches).
 
 After changing a notebook, regenerate its `.py` copy before committing:
 
