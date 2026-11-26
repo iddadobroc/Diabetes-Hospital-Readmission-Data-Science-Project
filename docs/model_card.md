@@ -7,8 +7,6 @@ tags:
   - healthcare
   - readmission
   - calibration
-datasets:
-  - UCI Diabetes 130-US hospitals for years 1999-2008
 metrics:
   - average_precision
   - roc_auc

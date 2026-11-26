@@ -13,7 +13,7 @@ clinical score** and 343 more than choosing at random.
 |---|---|
 | Live demo (Gradio Space) | `https://huggingface.co/spaces/davidecorbo/diabetes-readmission-app` |
 | Model repository and card | `https://huggingface.co/davidecorbo/diabetes-readmission-model` · [docs/model_card.md](docs/model_card.md) |
-| Every methodological decision | [docs/decision_log.md](docs/decision_log.md) (D-001 to D-032) |
+| Every methodological decision | [docs/decision_log.md](docs/decision_log.md) (D-001 to D-034) |
 | Course brief and project plan | [docs/](docs/) |
 
 ## Results
