@@ -25,13 +25,13 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-001 | Missing-value markers: `"?"` is missing, `"None"` is a category | Accepted |
 | D-002 | ID columns cast to category | Accepted |
 | D-003 | Decode ID columns with the lookup table | Accepted |
-| D-004 | Remove expired encounters | Proposed |
-| D-005 | Remove hospice encounters | Proposed |
-| D-006 | Drop constant columns and `weight` | Proposed |
-| D-007 | Drop rare medications | Proposed |
-| D-008 | Explicit "Unknown" / "Missing" levels for missing categorical values | Proposed |
-| D-009 | Group `medical_specialty` into top-N levels inside the model pipeline | Proposed |
-| D-010 | Train/test split strategy | Proposed (option A) |
+| D-004 | Remove expired encounters | Accepted |
+| D-005 | Remove hospice encounters | Accepted |
+| D-006 | Drop constant columns and `weight` | Accepted |
+| D-007 | Drop rare medications | Accepted |
+| D-008 | Explicit "Unknown" / "Missing" levels for missing categorical values | Accepted |
+| D-009 | Group `medical_specialty` into top-N levels inside the model pipeline | Accepted |
+| D-010 | Train/test split strategy | Accepted (option A) |
 | D-011 | Binary target definition | Accepted |
 | D-012 | Identifiers are never used as features | Accepted |
 | D-013 | Cleaning and split as shared, tested code in `src/` | Accepted |
@@ -87,6 +87,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Impact:** −1,652 rows (101,766 → 100,114; 70,439 patients); `<30` rate 11.16% → 11.34%.
 - **Limitations:** The dataset has no date-of-death field: deaths after discharge cannot be identified and remain labelled `NO`. 14 encounters have an `encounter_id` greater than an expired encounter of the same patient, so either `encounter_id` is not strictly chronological or the source contains inconsistencies.
 - **Update (2026-10-19):** implemented in `clean()` (`src/features.py`, constant `EXPIRED`), codes checked against the lookup table with an `assert` in the notebooks. No alternative to test.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-005 — Remove hospice encounters
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -95,6 +96,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** Keep them with a `hospice` flag. These patients can be readmitted: 43 of 771 are `<30` and 43 are `>30`.
 - **Impact (after D-004):** −771 rows (100,114 → 99,343; 69,990 patients); `<30` rate 11.34% → 11.39%.
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A1 (keep the hospice encounters with a `hospice` flag): LR −0.0011 PR-AUC (worse, 4 folds lost), GB −0.0004 (tie). Both models already score the hospice encounters lower (mean score 0.30–0.32 against 0.46; their `<30` rate is 5.6%). **Recommendation: accept the proposal** (no gain, and hospice is not a prevention target). Implemented as the default of `clean(hospice="drop")`.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-006 — Drop constant columns and `weight`
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -103,6 +105,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** Keep a `weight_recorded` flag (recorded vs. missing) — can be reconsidered if the EDA shows a relationship with the target.
 - **Impact:** −3 columns.
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A4 (`weight_recorded` flag): LR 0.0000, GB +0.0002 (ties); the `<30` rate is 11.3% with and without a recorded weight. **Recommendation: accept the proposal.** Implemented as the default of `clean(weight_flag=False)`.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-007 — Drop rare medications
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -113,6 +116,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Impact:** −10 columns. The next least used drug is `acarbose` (308 rows), which is kept.
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A2 (`other_meds` feature): LR 0.0000 (tie), GB identical predictions (the feature is never used: only about 200 encounters take a rare drug). **Recommendation: accept the proposal** (simpler). Implemented as the default of `clean(rare_meds="drop")`; the medication counts are computed before the drop.
 - **Update (2026-10-20):** The list was chosen by counting non-"No" rows on **all** encounters, test patients included. The count does not use the target, and A2 shows that these drugs carry no signal, so the effect on the scores is negligible; but strictly it is a choice learned from data that include the test set (D-030). The list is now a fixed constant (`RARE_MEDICATIONS` in `src/features.py`) and is not recomputed. The strict alternative would be to count on the training rows only, inside the pipeline.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-008 — Explicit levels for missing categorical values
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -121,6 +125,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** Imputation with the mode — rejected, it would invent values.
 - **Impact:** No rows removed.
 - **Update (2026-10-19):** implemented in `clean()`. The missing diagnoses become `"Missing"` in the `diag_*_group` features; the raw `diag_1/2/3` strings stay as reference columns (never features), so they keep their NaN.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-009 — Group `medical_specialty`
 - **Date:** 2026-10-05 · **Status:** Proposed
@@ -130,6 +135,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Impact:** To be measured on the training set.
 - **Update (2026-10-19), implementation:** the rule is applied to **every** categorical feature, not only `medical_specialty`: at most the 10 most frequent levels with at least 100 training rows are kept (`OneHotEncoder`/`OrdinalEncoder` with `min_frequency=100`, `max_categories=11`, `src/preprocessing.py`), fitted inside the pipeline. The rest, and any level unseen in training, go to one infrequent level, not to `"Other"`, which is already a real value of `race`. `gender` keeps all its levels (project brief).
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A3 (fixed grouping by clinical area, `SPECIALTY_GROUPS` in `src/features.py`, 15 areas): LR +0.0012 (better, 5 of 5 folds), GB −0.0010 (worse, 4 folds lost); on first encounters +0.0012 / +0.0006. Mixed and below 0.005: a tie. **Recommendation: keep the proposal by default**; A3 is a defensible option for a linear final model (readable groups, and it keeps Oncology/Hematology, about 20% `<30`, that the top-10 rule merges). Caveat: the mapping was written from the level names after seeing a table of rates by specialty on all the data; target rates are looked at on training rows only from now on.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-010 — Train/test split strategy
 - **Date:** 2026-10-05 · **Status:** Proposed (option A; was Open)
@@ -142,6 +148,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Evidence (2026-10-19):** `DC_Models/01_cleaning_variants.ipynb`: the alternative against the proposals (variant P), same 5 patient-grouped folds on the development patients (test patients excluded), logistic regression (LR) and gradient boosting (GB), scored on the same encounters. Reference P: PR-AUC 0.2129 (LR), 0.2256 (GB). Decision rule: better/worse only with at least 4 folds of 5; a difference matters from 0.005. Alternative A5 (train on the first encounter per patient only): GB **−0.0111** PR-AUC on all encounters (0 folds won of 5) and −0.0049 even when scored on first encounters only, the population of option B; LR −0.0008. The later encounters are useful training data. **Recommendation: option A.**
 - **Update (2026-10-19), implementation:** `split_by_patient()` (`src/features.py`): two `GroupShuffleSplit` cuts on `patient_nbr`, 60/20/20 train/validation/test of the patients, `random_state=42`; 59,814 / 19,727 / 19,802 encounters, `<30` rate 0.114 / 0.114 / 0.112. Both modelling streams (`LA_Models/`, `DC_Models/`) use the same split, so their final test scores are measured on the same patients.
 - **Update (2026-11-26), impact:** the "Impact" line above was never filled. Option A removes no encounter: 99,343 encounters of 69,990 patients in train / validation / test = 59,814 / 19,727 / 19,802 encounters. The fingerprints of the three sets (`fingerprint()` and `SPLIT_FINGERPRINTS` in `src/features.py`, moved there from `02_data_cleaning`) are train `1e2fece0c48e`, validation `920e3a74bf6e`, test `fe3f135ba61d`. The test `<30` rate (0.112) was printed here and in the README before the test was meant to be opened: a share of the outcome, not used for any choice.
+- **Update (2026-11-26), status Accepted:** agreed by the team (Davide Corbo, Luís Alcaide) as implemented in `clean()` and `src/preprocessing.py`; the evidence is above, and the final model (D-032) is built on it.
 
 ## D-011 — Binary target definition
 - **Date:** 2026-10-05 · **Status:** Accepted
