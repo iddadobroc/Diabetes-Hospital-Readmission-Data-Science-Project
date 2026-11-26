@@ -44,7 +44,7 @@ Every claim below is a measured number; the decision log of the project
 
 | File | What |
 |---|---|
-| `model.joblib` | The pipeline: one-hot preprocessing, XGBoost (580 trees, depth 5), isotonic calibrator (scikit-learn 1.9.1, XGBoost 3.4.1 on one thread, so it rebuilds identically on any machine; load with `joblib.load`, only from this trusted repository) |
+| `model.joblib` | The pipeline: one-hot preprocessing, XGBoost (580 trees, depth 5), isotonic calibrator (scikit-learn 1.9.1, XGBoost 3.4.1 on one thread, trained on Windows by the GitHub pipeline, identical to the model measured in the project notebook; load with `joblib.load`, only from this trusted repository) |
 | `config.json` | Features, input levels, typical values, ID mappings, capacity cut-offs, library versions |
 | `metrics.json` | Test metrics, baselines, tiers and the quality-gate values of this version |
 | `sample_discharges.csv` | 2,000 test discharges in the raw UCI format, for the demo worklist |

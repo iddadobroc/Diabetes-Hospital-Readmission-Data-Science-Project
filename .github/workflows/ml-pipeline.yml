@@ -25,12 +25,22 @@ env:
   MODEL_REPO_NAME: diabetes-readmission-model
   SPACE_NAME: diabetes-readmission-app
   MODEL_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('ci-{0}', github.sha) }}
+  PYTHONUTF8: "1"  # UTF-8 files and console on the Windows runner
 
 jobs:
   pipeline:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Windows, like the computer that ran 03_final_model: the Windows and Linux builds
+    # of XGBoost do not train bit-identical models from the same data and seed, and the
+    # published model must be the one whose numbers are presented (D-034, update).
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
       - name: Check out the code
         uses: actions/checkout@v7
 
