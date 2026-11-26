@@ -55,6 +55,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-031 | The shared test set was scored once by the LA stream (2026-10-14) | Accepted |
 | D-032 | Final recipe, calibration rule and quality gate, fixed before the test is opened | Accepted |
 | D-033 | Deployment: GitHub Actions, Hugging Face model repository and Gradio Space | Accepted |
+| D-034 | One XGBoost thread, so that every machine builds the same model | Accepted |
 
 ---
 
@@ -261,6 +262,13 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Display rule:** risks above 60% are shown as "over 60%". On test, 39 patients are above 60% (64% readmitted) and the last isotonic step gives 100% to 3 patients, of whom 1 was readmitted: a near-certainty the data cannot support.
 - **Alternatives considered:** skops instead of joblib (safer loading, W5): possible, not needed while the model is loaded only from the team's own repository. ZeroGPU hardware (course lab): not needed for a tree model; CPU basic avoids its quota and account rules.
 - **Update (2026-11-26):** the Space account offers only ZeroGPU on the free tier, so the Space runs on ZeroGPU. The app declares one `@spaces.GPU` function that is never called (the runtime requires one); the predictions run on CPU and use none of the daily GPU quota, so the live demo cannot run out of it. Space: `davidecorbo/diabetes-readmission-app`; model repository: `davidecorbo/diabetes-readmission-model`.
+
+## D-034 — One XGBoost thread, so that every machine builds the same model
+- **Date:** 2026-11-26 · **Status:** Accepted · **Implemented in:** `src/final_model.py` (`build_pipeline`, `n_jobs=1`)
+- **Problem:** The first GitHub pipeline run rebuilt the final model with a test PR-AUC of 0.2379, against 0.2390 in `03_final_model` on a 22-thread laptop, and `tests/test_model.py` stopped the pipeline. Same data, split, code and library versions: XGBoost's `hist` method adds its histogram sums in parallel, in an order that depends on the number of threads and on the CPU. On the laptop: 22 threads 0.23905, 4 threads 0.23898, 1 thread 0.23772; GitHub runner, 4 threads: 0.23786. The spread (about 0.001) is the size of the seed noise of D-032 (± 0.0011), so no conclusion changes, but two numbers for one recipe break the rule that every number presented is traced to one published model (course, W9).
+- **Decision:** XGBoost runs on one thread in the final recipe, the only setting whose summation order does not depend on the machine. Nothing else changes: hyperparameters, calibration option B, capacity, baselines and gate thresholds are those of D-032.
+- **Consequence:** `03_final_model` is re-run with the one-thread recipe; this scores the test set again with a model that differs only in the order of floating-point sums, and no choice depends on the new numbers (the gate is unchanged and was passed with a margin far larger than the gap). The results of the re-run replace those of the 22-thread run in the README, the model card, the app and the figures; the earlier Evidence entries are kept as written.
+- **Alternatives considered:** Comparing the CI model with the notebook within a tolerance: rejected, the presented numbers would then not be those of the published model. Fixing 4 threads: rejected, it still depends on the CPU (laptop 0.23898 against runner 0.23786).
 
 ## Research directions
 

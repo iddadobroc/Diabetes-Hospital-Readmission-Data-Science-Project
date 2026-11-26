@@ -65,9 +65,16 @@ QUALITY_GATE = {
 
 
 def build_pipeline(seed=SEED):
-    """The unfitted final pipeline: one-hot preprocessing + tuned XGBoost."""
+    """The unfitted final pipeline: one-hot preprocessing + tuned XGBoost.
+
+    XGBoost runs on ONE thread (D-034): with several threads the histogram sums are
+    added in an order that depends on the number of threads and on the CPU, so a
+    laptop and the GitHub runner built slightly different models (test PR-AUC 0.2390
+    against 0.2379). One thread gives the same model on every machine, so the model
+    published by the pipeline is the one measured in `03_final_model`.
+    """
     model = XGBClassifier(
-        **FINAL_PARAMS, tree_method="hist", random_state=seed, n_jobs=-1
+        **FINAL_PARAMS, tree_method="hist", random_state=seed, n_jobs=1
     )
     return make_pipeline("onehot", model)
 
