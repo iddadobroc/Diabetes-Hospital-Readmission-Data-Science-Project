@@ -103,7 +103,7 @@ MAPPINGS = {
 TYPICAL = CONFIG["typical"]
 BASE_RATE = METRICS["test"]["rate"]
 # Above 60% the isotonic calibration rests on a few dozen patients (observed rate about
-# 64% on test) and its last step reaches 100% on 3 of them: risks above this are shown as
+# 58% on test) and its last step reaches 100% on 1 of them: risks above this are shown as
 # "over 60%", never as a near-certainty (model card, limitations).
 MAX_SHOWN = 0.60
 CUTOFFS = CONFIG["cutoffs_raw"]

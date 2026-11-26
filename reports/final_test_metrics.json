@@ -6,50 +6,50 @@
   "test_readmissions": 2216,
   "test_rate": 0.11190788809211191,
   "metrics": {
-    "pr_auc": 0.23904870251010968,
-    "roc_auc": 0.6753903765753937,
-    "precision_top10": 0.2867238768298839,
-    "recall_top10": 0.2563176895306859,
-    "accuracy": 0.889051610948389,
-    "balanced_accuracy": 0.5090198050960294,
-    "precision": 0.6417910447761194,
-    "recall": 0.0194043321299639,
-    "f1": 0.037669732807709154,
-    "log_loss": 0.3318521664483564,
-    "brier": 0.09396942682516424
+    "pr_auc": 0.23772240323663524,
+    "roc_auc": 0.6743040954796254,
+    "precision_top10": 0.2852094901564866,
+    "recall_top10": 0.2549638989169675,
+    "accuracy": 0.8885466114533885,
+    "balanced_accuracy": 0.5067634874064987,
+    "precision": 0.5789473684210527,
+    "recall": 0.014891696750902527,
+    "f1": 0.029036515618125824,
+    "log_loss": 0.3306256625193575,
+    "brier": 0.09409905405816418
   },
   "calibration": {
-    "brier": 0.09396942682516424,
-    "mean_risk": 0.11545345053913345,
+    "brier": 0.09409905405816418,
+    "mean_risk": 0.11540399592566576,
     "observed_rate": 0.11190788809211191,
-    "gap_pp": 0.3545562447021533,
-    "slope": 0.9793715712531537,
-    "intercept": -0.0764677927268106,
-    "pr_auc_of_risk": 0.23260645843523667
+    "gap_pp": 0.3496107833553849,
+    "slope": 0.9932894488414385,
+    "intercept": -0.04938529643934152,
+    "pr_auc_of_risk": 0.23119932001094629
   },
   "tiers": {
     "All encounters": {
       "share_flagged": 1.0,
       "observed_rate": 0.111908,
-      "mean_risk": 0.115453,
+      "mean_risk": 0.115404,
       "recall": 1.0
     },
     "High": {
-      "share_flagged": 0.098323,
-      "observed_rate": 0.287622,
-      "mean_risk": 0.282975,
-      "recall": 0.252708
+      "share_flagged": 0.097869,
+      "observed_rate": 0.288442,
+      "mean_risk": 0.280353,
+      "recall": 0.252256
     },
     "Medium": {
-      "share_flagged": 0.303808,
-      "observed_rate": 0.193816,
-      "mean_risk": 0.197266,
-      "recall": 0.526173
+      "share_flagged": 0.302848,
+      "observed_rate": 0.192596,
+      "mean_risk": 0.19732,
+      "recall": 0.521209
     }
   },
   "cutoffs_raw": {
-    "High": 0.5149075388908386,
-    "Medium": 0.38533875346183777
+    "High": 0.5139101147651672,
+    "Medium": 0.385170578956604
   },
   "baselines": {
     "LACE index": {
@@ -72,7 +72,7 @@
     }
   },
   "reached_at_10pct": {
-    "XGBoost final (option B)": 568,
+    "XGBoost final (option B)": 565,
     "LACE index": 336,
     "Logistic regression": 523,
     "Random order": 221.6895263104737
@@ -80,19 +80,19 @@
   "calls_at_10pct": 1981,
   "gate": {
     "pr_auc": {
-      "value": 0.23904870251010968,
+      "value": 0.23772240323663524,
       "passed": true
     },
     "gain_over_lace": {
-      "value": 0.0994173991247655,
+      "value": 0.09809109985129105,
       "passed": true
     },
     "recall_top10": {
-      "value": 0.2527075812274368,
+      "value": 0.25225631768953066,
       "passed": true
     },
     "calibration_gap_pp": {
-      "value": 0.3545562447021533,
+      "value": 0.3496107833553849,
       "passed": true
     }
   }

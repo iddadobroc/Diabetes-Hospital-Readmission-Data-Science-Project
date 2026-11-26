@@ -5,9 +5,9 @@ NOVA IMS, Enterprise Data Science Bootcamp 2026, group project.
 **Decision.** At discharge, the Director of Care Quality of a hospital network must decide
 which diabetic patients get extra follow-up, with capacity for only some of them.
 **Answer of the project.** A calibrated model ranks the discharges by their risk of an
-inpatient readmission within 30 days: following up the riskiest 10% reaches **568 of
-2,216 readmissions** on test patients the model never saw, **232 more than the LACE
-clinical score** and 346 more than choosing at random.
+inpatient readmission within 30 days: following up the riskiest 10% reaches **565 of
+2,216 readmissions** on test patients the model never saw, **229 more than the LACE
+clinical score** and 343 more than choosing at random.
 
 | | Link |
 |---|---|
@@ -23,15 +23,15 @@ patients, held out from every fit and choice; decision log D-032):
 
 | Ranking method | PR-AUC | ROC-AUC | Readmissions reached with 10% capacity |
 |---|---:|---:|---:|
-| **XGBoost, calibrated (final)** | **0.239** | **0.675** | **568** |
+| **XGBoost, calibrated (final)** | **0.238** | **0.674** | **565** |
 | Logistic regression | 0.218 | 0.667 | 523 |
 | LACE index (clinical score) | 0.140 | 0.571 | 336 |
 | Random order | 0.112 | 0.500 | 222 |
 
-- **Calibrated:** mean estimated risk 11.5% against 11.2% observed; every risk decile within 1.3 pp.
-- **Tiers by capacity:** High = riskiest 10% of discharges (28.8% of them are readmitted, 25% of all readmissions); High + Medium = 30% of discharges, 53% of readmissions.
+- **Calibrated:** mean estimated risk 11.5% against 11.2% observed; every risk decile within 1.8 pp.
+- **Tiers by capacity:** High = riskiest 10% of discharges (28.8% of them are readmitted, 25% of all readmissions); High + Medium = 30% of discharges, 52% of readmissions.
 - **Quality gate** fixed before the test was opened: passed on all four lines.
-- **Fairness:** calibration holds in every race, age and gender group with 500+ test discharges; the High tier reaches 21% (80 and over) to 32% (under 50) of each group's readmissions.
+- **Fairness:** calibration holds in every race, age and gender group with 500+ test discharges; the High tier reaches 21% (80 and over) to 34% (under 50) of each group's readmissions.
 - **Limits:** the model ranks risk, it does not prove that follow-up prevents readmissions; 1999-2008 US data; readmissions outside the network are recorded as "no". See the [model card](docs/model_card.md).
 
 The figures of the report and of the app are in [reports/figures/](reports/figures/), in the IBCS notation.

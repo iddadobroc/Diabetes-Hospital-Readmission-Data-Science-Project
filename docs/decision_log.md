@@ -269,6 +269,13 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Decision:** XGBoost runs on one thread in the final recipe, the only setting whose summation order does not depend on the machine. Nothing else changes: hyperparameters, calibration option B, capacity, baselines and gate thresholds are those of D-032.
 - **Consequence:** `03_final_model` is re-run with the one-thread recipe; this scores the test set again with a model that differs only in the order of floating-point sums, and no choice depends on the new numbers (the gate is unchanged and was passed with a margin far larger than the gap). The results of the re-run replace those of the 22-thread run in the README, the model card, the app and the figures; the earlier Evidence entries are kept as written.
 - **Alternatives considered:** Comparing the CI model with the notebook within a tolerance: rejected, the presented numbers would then not be those of the published model. Fixing 4 threads: rejected, it still depends on the CPU (laptop 0.23898 against runner 0.23786).
+- **Evidence (2026-11-26), re-run with one thread** (`03_final_model`; `train.py` reproduces it to the last digit, `tests/test_model.py`):
+  - Validation, 5 seeds: PR-AUC 0.2285 ± 0.0012. Rehearsal: A Brier 0.0967, slope 0.88; B Brier 0.0965, slope 0.99, High tier 9.95%; Brier A − B = +0.0002 → **B** (unchanged). Drivers: rankings correlate at least 0.951 between folds, 11 of 12 shared.
+  - Test: PR-AUC **0.238**, ROC-AUC 0.674, precision / recall in the top 10% 0.285 / 0.255; **565 readmissions reached** with capacity for 10% (LACE 336, logistic regression 523, random 222): +229 over LACE. Calibration: 11.5% estimated against 11.2% observed (+0.35 pp), slope 0.99, every decile within 1.8 pp. Tiers: High 9.8% of encounters, 28.8% readmitted, 25.2% of readmissions; High + Medium 30.3%, 19.3%, 52.1%.
+  - Quality gate: passed on all four lines (0.238; +0.098 over LACE; 0.252; 0.35 pp).
+  - Fairness (High-tier recall, groups ≥ 500): Caucasian 26%, AfricanAmerican 21%; age <50 34%, 50-59 27%, 60-69 22%, 70-79 25%, 80+ 21%; female 27%, male 23%; mean risk within 0.9 pp of the observed rate in each group.
+  - Above 60% risk: 43 test patients, 58% readmitted; the top isotonic step (100%) holds 1 patient, not readmitted: the display rule of D-033 stands.
+  - These numbers are the ones of the published model and replace the 22-thread ones in the README, the model card, the app and the figures.
 
 ## Research directions
 
