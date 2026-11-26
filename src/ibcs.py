@@ -74,8 +74,36 @@ def clean_axes(ax, keep_category_axis=True):
         ax.set_yticks([])
 
 
-def page(fig, message, who, what, unit, when, top=0.80):
-    """Write the message and the three-line title above the charts of `fig`.
+def _wrap(fig, text, max_width_in, **font):
+    """Wrap `text` so that every line fits in `max_width_in` inches, measured.
+
+    Each paragraph (explicit newline) is filled word by word, measuring the real width
+    of the line with the figure's renderer, so it works for any font size and weight.
+    """
+    renderer = fig.canvas.get_renderer()
+    probe = fig.text(0, 0, "", **font)
+    lines = []
+    for paragraph in text.split("\n"):
+        line = ""
+        for word in paragraph.split(" "):
+            candidate = f"{line} {word}".strip()
+            probe.set_text(candidate)
+            width = probe.get_window_extent(renderer).width / fig.dpi
+            if line and width > max_width_in:
+                lines.append(line)
+                line = word
+            else:
+                line = candidate
+        lines.append(line)
+    probe.remove()
+    return lines
+
+
+def page(fig, message, who, what, unit, when, top=None):
+    """Write the message and the three-line title at the top of `fig`.
+
+    The message is wrapped to the width of the page. Call `footnote` after it: the
+    footnote also lays the charts out between the title and the footnote.
 
     Args:
         fig (matplotlib.figure.Figure): The figure (the "page").
@@ -84,25 +112,66 @@ def page(fig, message, who, what, unit, when, top=0.80):
         what (str): Line 2, the measure, written in bold.
         unit (str): Line 2, the unit, written in regular after the measure.
         when (str): Line 3, the period and the scenarios.
-        top (float): The top of the chart area, in figure coordinates.
+        top: Ignored (kept for older calls); the layout is computed.
     """
-    fig.text(0.02, 0.985, message, ha="left", va="top", fontsize=12.5, weight="bold")
-    y = 0.985 - 0.075 * (1 + message.count("\n"))
-    fig.text(0.02, y, who, ha="left", va="top", fontsize=10)
-    measure = fig.text(
-        0.02, y - 0.045, what, ha="left", va="top", fontsize=10, weight="bold"
-    )
+    width_in, height_in = fig.get_size_inches()
+    y_in = 0.12
+    for line in _wrap(fig, message, width_in - 0.4, fontsize=12.5, weight="bold"):
+        fig.text(0.02, 1 - y_in / height_in, line, ha="left", va="top",
+                 fontsize=12.5, weight="bold")
+        y_in += 0.24
+    y_in += 0.1
+    fig.text(0.02, 1 - y_in / height_in, who, ha="left", va="top", fontsize=10)
+    measure = fig.text(0.02, 1 - (y_in + 0.2) / height_in, what, ha="left",
+                       va="top", fontsize=10, weight="bold")
     fig.canvas.draw()
     box = measure.get_window_extent().transformed(fig.transFigure.inverted())
-    fig.text(box.x1 + 0.006, y - 0.045, unit, ha="left", va="top", fontsize=10)
-    fig.text(0.02, y - 0.09, when, ha="left", va="top", fontsize=10)
-    fig.subplots_adjust(top=top)
+    fig.text(box.x1 + 0.006, 1 - (y_in + 0.2) / height_in, unit, ha="left",
+             va="top", fontsize=10)
+    fig.text(0.02, 1 - (y_in + 0.4) / height_in, when, ha="left", va="top",
+             fontsize=10)
+    fig._ibcs_header_in = y_in + 0.4 + 0.45
 
 
-def footnote(fig, text, bottom=0.14):
-    """Write the footnote (source, data used, what was left out) under the charts."""
-    fig.text(0.02, 0.015, text, ha="left", va="bottom", fontsize=7.5, color=MUTED)
-    fig.subplots_adjust(bottom=bottom)
+def footnote(fig, text, bottom=None, right_in=0.45):
+    """Write the footnote and lay the charts out between title and footnote.
+
+    The footnote names the source, the data used and what was left out. The left
+    margin is measured on the category labels, so long labels are never cut.
+
+    Args:
+        fig (matplotlib.figure.Figure): The page, after `page`.
+        text (str): The footnote.
+        bottom: Ignored (kept for older calls); the layout is computed.
+        right_in (float): Right margin in inches, for labels at the end of lines.
+    """
+    width_in, height_in = fig.get_size_inches()
+    lines = _wrap(fig, text, width_in - 0.4, fontsize=7.5)
+    for i, line in enumerate(reversed(lines)):
+        fig.text(0.02, (0.1 + 0.14 * i) / height_in, line, ha="left",
+                 va="bottom", fontsize=7.5, color=MUTED)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    widths = [
+        label.get_window_extent(renderer).width / fig.dpi
+        for ax in fig.axes
+        for label in ax.get_yticklabels()
+        if label.get_visible() and label.get_text()
+    ]
+    has_x_labels = any(
+        label.get_visible() and label.get_text()
+        for ax in fig.axes
+        for label in ax.get_xticklabels()
+    )
+    left_in = (max(widths) + 0.2) if widths else 0.3
+    bottom_in = 0.25 + 0.14 * len(lines) + (0.35 if has_x_labels else 0.1)
+    header_in = getattr(fig, "_ibcs_header_in", 0.3)
+    fig.subplots_adjust(
+        left=left_in / width_in,
+        right=1 - right_in / width_in,
+        top=1 - header_in / height_in,
+        bottom=bottom_in / height_in,
+    )
 
 
 def bars_h(
@@ -206,20 +275,20 @@ def columns_ac_fc(ax, labels, ac, fc, decimals=1, unit="%"):
     """
     x = np.arange(len(labels))
     ax.bar(
-        x - 0.12,
+        x - 0.1,
         fc,
-        width=0.5,
+        width=0.4,
         color="white",
         edgecolor=AC,
         hatch="////",
         linewidth=1.0,
         label="FC",
     )
-    ax.bar(x + 0.06, ac, width=0.5, color=AC, label="AC")
+    ax.bar(x + 0.06, ac, width=0.4, color=AC, label="AC")
     for i, value in enumerate(ac):
         ax.text(
             x[i] + 0.06,
-            value,
+            max(value, fc[i]),
             fmt_number(value, decimals, unit),
             ha="center",
             va="bottom",
@@ -229,10 +298,10 @@ def columns_ac_fc(ax, labels, ac, fc, decimals=1, unit="%"):
     ax.set_yticks([])
     ax.set_ylim(0, max(np.max(ac), np.max(fc)) * 1.2)
     clean_axes(ax)
-    # Legend integrated next to the last pair of columns (IBCS UNIFY 2.3)
+    # Legend integrated beside the last pair of columns (IBCS UNIFY 2.3)
     last = len(labels) - 1
-    ax.text(last + 0.45, ac[last] * 0.5, "AC", fontsize=8.5, va="center")
-    ax.text(last - 0.12, fc[last] * 1.06 + 0.002, "FC", fontsize=8.5, ha="center")
+    ax.text(last + 0.36, ac[last] * 0.5, "AC", fontsize=8.5, va="center")
+    ax.text(last - 0.4, fc[last] * 0.5, "FC", fontsize=8.5, va="center", ha="right")
 
 
 def variance_columns(ax, labels, values, decimals=1, unit="pp", higher_is_better=False):

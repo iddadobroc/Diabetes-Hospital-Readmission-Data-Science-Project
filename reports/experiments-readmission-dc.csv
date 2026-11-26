@@ -25,3 +25,6 @@ date,model,family,dataset,pr_auc,roc_auc,precision_top10,recall_top10,accuracy,b
 2026-10-19,Keras MLP (tuned),neural,validation,0.222,0.673,0.258,0.226,0.649,0.626,0.183,0.597,0.28,0.626,0.218,random search 6
 2026-10-19,Soft-voting ensemble,ensemble,train,0.33,0.754,0.367,0.321,0.762,0.678,0.257,0.569,0.354,0.547,0.182,XGBoost (tuned) + XGBoost AFT (tuned) + Keras MLP (tuned)
 2026-10-19,Soft-voting ensemble,ensemble,validation,0.229,0.676,0.269,0.236,0.743,0.619,0.211,0.457,0.289,0.564,0.189,XGBoost (tuned) + XGBoost AFT (tuned) + Keras MLP (tuned)
+2026-11-26,XGBoost final (option B),boosting,test,0.239,0.675,0.287,0.256,0.889,0.509,0.642,0.019,0.038,0.332,0.094,"03_final_model, fitted on train + validation, scored once on test"
+2026-11-26,LACE index,clinical score,test,0.14,0.571,0.17,0.152,0.888,0.5,0.0,0.0,0.0,0.347,0.099,"03_final_model, fitted on train + validation, scored once on test"
+2026-11-26,Logistic regression,linear,test,0.218,0.667,0.264,0.236,0.671,0.617,0.181,0.548,0.272,0.65,0.226,"03_final_model, fitted on train + validation, scored once on test"

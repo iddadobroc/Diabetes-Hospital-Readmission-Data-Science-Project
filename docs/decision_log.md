@@ -36,20 +36,20 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 | D-012 | Identifiers are never used as features | Accepted |
 | D-013 | Cleaning and split as shared, tested code in `src/` | Accepted |
 | D-014 | Every learned step lives inside a scikit-learn `Pipeline` | Accepted |
-| D-015 | Model selection protocol | Proposed |
+| D-015 | Model selection protocol | Accepted |
 | D-016 | Evaluation metrics and class imbalance | Accepted |
 | D-017 | No random internal splits (early stopping, Keras, stacking) | Accepted |
 | D-018 | XGBoost AFT on interval-censored times | Accepted |
-| D-019 | Choice of the model | Proposed |
+| D-019 | Choice of the model | Accepted |
 | D-020 | Statistical comparison of models with patient-level uncertainty | Open |
 | D-021 | Nested grouped cross-validation | Open |
-| D-022 | Calibration, decision curve and capacity tiers | Proposed (calibration and tiers); Open (decision curve) |
+| D-022 | Calibration, decision curve and capacity tiers | Accepted (calibration and tiers); Open (decision curve) |
 | D-023 | Ranking objectives aligned with the follow-up capacity | Open |
-| D-024 | Clinically grounded features and a LACE baseline | Open |
+| D-024 | Clinically grounded features and a LACE baseline | Accepted (LACE baseline); Open (features) |
 | D-025 | Using the three-level outcome | Open |
 | D-026 | Patient-history features from earlier encounters | Open |
 | D-027 | Conformal prediction for risk with guarantees | Open |
-| D-028 | Fairness audit | Open |
+| D-028 | Fairness audit | Accepted (baseline audit); Open (intersections, conformal) |
 | D-029 | Explainability, robustness and data limits | Open |
 | D-030 | Audit against scikit-learn's "Common pitfalls and recommended practices" | Accepted |
 | D-031 | The shared test set was scored once by the LA stream (2026-10-14) | Accepted |
@@ -174,6 +174,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** Nested cross-validation (D-021), more rigorous and about five times slower.
 - **Limitations:** The shortlist is chosen on validation and step (3) includes validation, so the step-(3) scores are slightly optimistic; the single test evaluation measures by how much.
 - **Update (2026-10-20):** (3b) The shortlist is also refitted with 5 seeds on train and scored on validation, so that a gap is not mistaken for the luck of one seed (D-030). (4) The test set scores the chosen model with **both** calibration options of D-022; the primary option is declared (`PRIMARY`) from the rehearsal on validation **before** the test is opened, and the notebook refuses to open it otherwise. Both rows are logged; nothing is chosen after.
+- **Update (2026-11-26), status Accepted:** applied end to end. Steps (1)-(3) in `02_model_exploration`; the calibration rehearsal, the declaration of `PRIMARY` and the single test evaluation in `03_final_model` (D-032). One change: the test scores only the `PRIMARY` option, not both, because the rule picking it was written before the rehearsal.
 
 ## D-016 — Evaluation metrics and class imbalance
 - **Date:** 2026-10-19 · **Status:** Accepted · **Implemented in:** `src/evaluation.py`
@@ -200,6 +201,7 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
 - **Alternatives considered:** The ensemble as production model; EBM (0.005 behind XGBoost on validation, fully readable); the logistic regression (simplest, clearly weaker).
 - **Next:** Calibration and capacity tiers on validation (D-022) before the single test evaluation. To be compared with the final model of `LA_Models/` on the same test patients.
 - **Update (2026-11-26):** the LA final model had already been scored on the test set on 2026-10-14 (D-031): the comparison with it is reported, it is not a selection step. **Reproducibility:** the exact hyperparameters were recovered from the search (`FINAL_PARAMS` in `src/final_model.py`, `ParameterSampler` with the same seed). Refitted on train today the model scores validation PR-AUC 0.2278 (log of 2026-10-19: 0.2263). Data and split are identical (same fingerprints); XGBoost was reinstalled on 2026-10-20 (now 3.4.1), after the logged run, which explains the gap.
+- **Update (2026-11-26), status Accepted:** tuned XGBoost is the deployed model; it passed the quality gate on the test set (D-032). The ensemble stays the challenger (+0.002 on validation, three models to serve); EBM is not deployed.
 
 ## D-030 — Audit against scikit-learn's "Common pitfalls and recommended practices"
 - **Date:** 2026-10-20 · **Status:** Accepted · **Implemented in:** `src/calibration.py`, `src/models.py` (`with_seed`), `DC_Models/02_model_exploration.ipynb`
@@ -235,6 +237,13 @@ All figures below refer to the raw `diabetic_data.csv` (101,766 encounters, 71,5
   - Drivers (TreeSHAP, 5 grouped folds of train): the rankings correlate at least 0.958 between folds; 11 of the 12 largest features are the same in every fold; `number_inpatient` and the discharge destination lead.
   - Baselines: LACE PR-AUC 0.139, logistic regression 0.210, random 0.114.
 - **Clarification (2026-11-26), before the test:** the isotonic risks have ties that lower PR-AUC (0.220 instead of 0.228 on validation for the same order). The worklist ranks by the raw score, so the ranking metrics of the gate (PR-AUC, recall in the top 10%) are computed on the raw score and the calibration line on the calibrated risk (`evaluate()` in `src/final_model.py`). The thresholds are unchanged.
+- **Evidence (2026-11-26), the test set, opened once** (`DC_Models/03_final_model`, Stage 7; numbers in `reports/final_test_metrics.json` and in the experiment log). Model: option B fitted on train + validation; 19,802 test encounters of 13,998 patients, 2,216 readmissions (11.2%).
+  - Ranking (raw score): PR-AUC **0.239**, ROC-AUC 0.675, precision / recall in the top 10% 0.287 / 0.256. Baselines on the same patients: logistic regression 0.218 / 0.667, LACE 0.140 / 0.571, random 0.112.
+  - With capacity for 10% of the discharges (1,981 calls): **568 readmissions reached**, against 523 (logistic regression), 336 (LACE) and 222 expected at random: +232 over LACE.
+  - Calibration: mean risk 11.5% against 11.2% observed (+0.35 pp), slope 0.98, intercept −0.08, Brier 0.094; every risk decile within 1.3 pp of its observed rate.
+  - Tiers (cut-offs from the out-of-fold reference): High 9.8% of encounters, observed rate 28.8% (mean risk 28.3%), 25.3% of the readmissions; High + Medium 30.4%, 19.4%, 52.6%.
+  - **Quality gate: passed on all four lines** (PR-AUC 0.239 ≥ 0.20; +0.099 over LACE ≥ 0.01; High-tier recall 0.253 ≥ 0.20; calibration gap 0.35 pp ≤ 1 pp).
+  - The test PR-AUC (0.239) is above validation (0.228) and above the LA score on the same patients (0.232, D-031): the 5-seed spread (± 0.001) is smaller than this gap, so it reflects these patients, not the model; the honest summary is "about 0.23".
 
 ## Research directions
 
@@ -258,6 +267,7 @@ The entries below are **Open**: ideas to make the work more rigorous or to go be
 - **Leakage rule:** Calibration and cut-offs learned on validation (or out-of-fold predictions), never on test.
 - **Update (2026-10-20), status Proposed for calibration and tiers:** The calibrator and the cut-offs must also be learned **for the model that is scored**: the plan of `02` calibrated the train-only model on validation, while Stage 7 refitted an uncalibrated pipeline on train + validation (D-030). Two consistent options, implemented in `src/calibration.py` and Stage 6 of `DC_Models/02_model_exploration.ipynb`: **A, holdout**: model fitted on train, calibrator and cut-offs from its predictions on validation (`CalibratedClassifierCV(FrozenEstimator(...))`); **B, out of fold**: model refitted on train + validation, calibrator and cut-offs from its grouped out-of-fold predictions (`CalibratedClassifierCV(ensemble=False)`, folds cut by patient). Both are rehearsed with validation in the role of the test (A: 75 / 25 of the training patients; B: out of fold on train), then both are scored once on test (D-015). Isotonic calibration, tiers High = top 10%, High + Medium = top 30%. Rehearsal results: RESULTS_PLACEHOLDER
 - **Update (2026-11-26):** the placeholder above was never filled: Stage 6 of `02_model_exploration` was not run. The rehearsal is done in `DC_Models/03_final_model` (results in D-032). **Fix before it ran:** isotonic calibration is a step function, so many encounters share one calibrated risk and a cut-off on the risk can flag much more than 10%. The cut-offs are now taken on the **raw score** of the model (same order, almost no ties): `return_raw=True`, `raw_scores()` and `tier_report(..., score=)` in `src/calibration.py`, with a unit test on tied risks. The risk shown to the user is still the calibrated one.
+- **Update (2026-11-26), status Accepted for calibration and tiers:** option B, isotonic, tiers High = top 10% and Medium = next 20% (D-032, results there). The decision curve is still open.
 
 ## D-023 — Ranking objectives aligned with the follow-up capacity
 - **Date:** 2026-10-19 · **Status:** Open
@@ -291,7 +301,9 @@ The entries below are **Open**: ideas to make the work more rigorous or to go be
 - **Date:** 2026-10-19 · **Status:** Open (planned, Phase 5 of the project plan)
 - **Options:** By `race`, `age` band and `gender` (without the 3 `Unknown/Invalid` encounters, project brief), with patient-bootstrap intervals: PR-AUC; **calibration within groups**; **equal opportunity at the capacity cut-off** (share of each group's readmissions that reach the top 10%); share of each group in the High tier. Intersections (race × age) where the counts allow. State the trade-offs: calibration within groups and equal error rates cannot all hold when base rates differ (Kleinberg et al. 2016; Chouldechova 2017).
 - **Leakage rule:** Group metrics on validation during development, on test once at the end.
+- **Evidence (2026-11-26), baseline audit** (`03_final_model`, Stages 6-7; intervals by patient): calibration within groups holds: for every race, age and gender group with at least 500 test encounters the mean risk is within 1 pp of the observed rate (largest gap +0.8 pp, AfricanAmerican). Share of each group's readmissions reached by the High tier on test: Caucasian 26%, AfricanAmerican 22%; age <50 32%, 50-59 28%, 60-69 23%, 70-79 25%, 80+ 21%; female 27%, male 23% (all: 25%). The gap by age has the same sign on validation (34% under 50, 21% at 80+): older patients' readmissions are spread over more ordinary-looking risk profiles. On test alone the intervals overlap (under 50: 21..44%, 80+: 17..25%), so the age gap is a direction to watch, not a proven disparity. Groups under 500 encounters (Asian, Hispanic, Other, Unknown race) are too small to interpret. Not done: intersections, Mondrian conformal (D-027).
 
 ## D-029 — Explainability, robustness and data limits
 - **Date:** 2026-10-19 · **Status:** Open
+- **Evidence (2026-11-26), option (a):** TreeSHAP contributions computed natively by XGBoost (`contributions()` in `src/final_model.py`, checked to sum to the log-odds). On the 5 grouped folds of train the feature rankings correlate at least 0.958 and 11 of the 12 largest features are the same; `number_inpatient` and the discharge destination lead (29% of the total effect on test). The app shows the per-patient contributions as reasons; they are associations, not causes.
 - **Options:** (a) **SHAP** values of the chosen model (global importance, per-patient reasons for the worklist, interaction values), checked for **stability across folds**, and compared with the shape functions of EBM: features that both rank high are the robust findings. (b) **Subgroup and shift robustness:** performance by admission source, admission type and payer, and on a pseudo-temporal split by `encounter_id`. (c) **Learning curves** (score against the number of training patients): if the curve is flat, more data of the same kind will not help, and the ceiling (~0.68 ROC-AUC) comes from the features. (d) **Label limits:** readmissions to hospitals outside the network are recorded as `NO`, so the negatives contain unobserved positives (a positive-unlabelled setting); and the model is correlational (project brief): it ranks risk, it does not say that follow-up prevents readmission.

@@ -1,0 +1,99 @@
+{
+  "model": "XGBoost final (option B)",
+  "primary": "B",
+  "test_encounters": 19802,
+  "test_patients": 13998,
+  "test_readmissions": 2216,
+  "test_rate": 0.11190788809211191,
+  "metrics": {
+    "pr_auc": 0.23904870251010968,
+    "roc_auc": 0.6753903765753937,
+    "precision_top10": 0.2867238768298839,
+    "recall_top10": 0.2563176895306859,
+    "accuracy": 0.889051610948389,
+    "balanced_accuracy": 0.5090198050960294,
+    "precision": 0.6417910447761194,
+    "recall": 0.0194043321299639,
+    "f1": 0.037669732807709154,
+    "log_loss": 0.3318521664483564,
+    "brier": 0.09396942682516424
+  },
+  "calibration": {
+    "brier": 0.09396942682516424,
+    "mean_risk": 0.11545345053913345,
+    "observed_rate": 0.11190788809211191,
+    "gap_pp": 0.3545562447021533,
+    "slope": 0.9793715712531537,
+    "intercept": -0.0764677927268106,
+    "pr_auc_of_risk": 0.23260645843523667
+  },
+  "tiers": {
+    "All encounters": {
+      "share_flagged": 1.0,
+      "observed_rate": 0.111908,
+      "mean_risk": 0.115453,
+      "recall": 1.0
+    },
+    "High": {
+      "share_flagged": 0.098323,
+      "observed_rate": 0.287622,
+      "mean_risk": 0.282975,
+      "recall": 0.252708
+    },
+    "Medium": {
+      "share_flagged": 0.303808,
+      "observed_rate": 0.193816,
+      "mean_risk": 0.197266,
+      "recall": 0.526173
+    }
+  },
+  "cutoffs_raw": {
+    "High": 0.5149075388908386,
+    "Medium": 0.38533875346183777
+  },
+  "baselines": {
+    "LACE index": {
+      "pr_auc": 0.13963130338534419,
+      "roc_auc": 0.5714328420498583,
+      "precision_top10": 0.1696113074204947,
+      "recall_top10": 0.15162454873646208
+    },
+    "Logistic regression": {
+      "pr_auc": 0.21757666451183078,
+      "roc_auc": 0.6673994502929596,
+      "precision_top10": 0.2640080767289248,
+      "recall_top10": 0.23601083032490974
+    },
+    "Random order": {
+      "pr_auc": 0.11190788809211191,
+      "roc_auc": 0.5,
+      "precision_top10": 0.11190788809211191,
+      "recall_top10": 0.1
+    }
+  },
+  "reached_at_10pct": {
+    "XGBoost final (option B)": 568,
+    "LACE index": 336,
+    "Logistic regression": 523,
+    "Random order": 221.6895263104737
+  },
+  "calls_at_10pct": 1981,
+  "gate": {
+    "pr_auc": {
+      "value": 0.23904870251010968,
+      "passed": true
+    },
+    "gain_over_lace": {
+      "value": 0.0994173991247655,
+      "passed": true
+    },
+    "recall_top10": {
+      "value": 0.2527075812274368,
+      "passed": true
+    },
+    "calibration_gap_pp": {
+      "value": 0.3545562447021533,
+      "passed": true
+    }
+  }
+}
